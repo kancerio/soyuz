@@ -1,3 +1,21 @@
 node_modules
 .next
 .next/trace
+# Python
+__pycache__/
+*.pyc
+.env
+venv/
+.venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
