@@ -19,14 +19,23 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <h1 className="text-xl font-bold">Soyuz</h1>
         </div>
-        <nav className="flex-1 p-4">
-          <Link href="/chat" className="block py-2 px-3 rounded hover:bg-gray-200 dark:hover:bg-gray-700">
+        <nav className="flex-1 p-4 space-y-2">
+          <Link
+            href="/chat"
+            className="block px-3 py-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+          >
             Чаты
           </Link>
-          <Link href="/profile" className="block py-2 px-3 rounded hover:bg-gray-200 dark:hover:bg-gray-700">
+          <Link
+            href="/profile"
+            className="block px-3 py-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+          >
             Профиль
           </Link>
-          <Link href="/settings" className="block py-2 px-3 rounded hover:bg-gray-200 dark:hover:bg-gray-700">
+          <Link
+            href="/settings"
+            className="block px-3 py-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+          >
             Настройки
           </Link>
         </nav>
