@@ -37,7 +37,9 @@ jobs:
       - name: Check formatting with Black
         run: black ./src --check --diff
       - name: Run tests with pytest
-        run: pytest ./tests -v --tb=short
+        run: |
+          export PYTHONPATH=./src:$PYTHONPATH
+          pytest ./tests -v --tb=short
 
   docker-build:
     runs-on: ubuntu-latest
