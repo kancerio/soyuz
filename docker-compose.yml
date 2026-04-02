@@ -1,0 +1,82 @@
+services:
+  # PostgreSQL – база данных для бэкенда
+  postgres:
+    image: postgres:15-alpine
+    container_name: messenger-postgres
+    environment:
+      POSTGRES_USER: messenger
+      POSTGRES_PASSWORD: secretpassword
+      POSTGRES_DB: messenger_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - messenger-network
+
+  # Redis – для кеша и WebSocket
+  redis:
+    image: redis:7-alpine
+    container_name: messenger-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - messenger-network
+
+  # AI-сервис (FastAPI) – твой сервис
+  ai-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ai
+    container_name: messenger-ai
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+    networks:
+      - messenger-network
+    depends_on:
+      - postgres
+      - redis
+
+  # === Ниже – заглушки для будущих сервисов ===
+  # Бэкенд (Node.js/NestJS) – будет добавлен позже
+  # backend:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: messenger-backend
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - DATABASE_URL=postgresql://messenger:secretpassword@postgres:5432/messenger_db
+  #     - REDIS_URL=redis://redis:6379
+  #     - AI_SERVICE_URL=http://ai-service:8000
+  #   networks:
+  #     - messenger-network
+  #   depends_on:
+  #     - postgres
+  #     - redis
+  #     - ai-service
+
+  # Фронтенд (React/Next.js) – будет добавлен позже
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: messenger-frontend
+  #   ports:
+  #     - "3001:3000"
+  #   environment:
+  #     - NEXT_PUBLIC_API_URL=http://backend:3000
+  #   networks:
+  #     - messenger-network
+  #   depends_on:
+  #     - backend
+
+networks:
+  messenger-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
