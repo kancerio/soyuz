@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
-  const token = request.cookies.get('token')?.value || localStorage.getItem('token'); 
-  // localStorage не доступен в middleware
-  // Проще: проверять токен в coockies, пока не реализовано
-  // Для демки пропускаем все маршруты
+  // В middleware доступны только cookies, не localStorage
+  const token = request.cookies.get('token')?.value;
+  
+  // Если нужна защита, можно редиректить на логин при отсутствии токена
+  // Пока просто пропускаем все запросы
   return NextResponse.next();
 }
 
