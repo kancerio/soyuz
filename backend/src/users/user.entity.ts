@@ -1,22 +1,25 @@
 import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn } from 'typeorm';
 
-@Entity('users') // название таблицы в БД
+@Entity('users')
 export class User {
-  @PrimaryGeneratedColumn() // автоинкрементный ID
+  @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ unique: true }) // уникальный email
+  @Column({ type: 'varchar', unique: true, length: 255 })
   email: string;
 
-  @Column({ unique: true }) // уникальное имя пользователя
+  @Column({ type: 'varchar', unique: true, length: 100 })
   username: string;
 
-  @Column() // пароль (будет храниться в зашифрованном виде)
+  @Column({ type: 'varchar', length: 255 })
   password: string;
 
-  @Column({ default: 'ru' }) // язык интерфейса (ru/en)
+  @Column({ type: 'varchar', default: 'ru', length: 10 })
   language: string;
 
-  @CreateDateColumn() // дата создания (заполняется автоматически)
+  @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;
+
+  @Column({ type: 'varchar', nullable: true, length: 500 })
+  refreshToken: string;
 }
