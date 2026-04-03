@@ -2,7 +2,9 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { UsersModule } from './users/users.module';
-import { AuthModule } from './auth/auth.module';  // ← должен быть импорт
+import { AuthModule } from './auth/auth.module';
+import { ChatsModule } from './chats/chats.module';      // ← добавить
+import { MessagesModule } from './messages/messages.module';  // ← добавить
 
 @Module({
   imports: [
@@ -19,13 +21,15 @@ import { AuthModule } from './auth/auth.module';  // ← должен быть �
         password: configService.get('DB_PASSWORD'),
         database: configService.get('DB_DATABASE'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: true,
+        synchronize: false,  // оставляем false, таблицы создаём вручную
         logging: true,
       }),
       inject: [ConfigService],
     }),
     UsersModule,
-    AuthModule,  // ← должен быть добавлен
+    AuthModule,
+    ChatsModule,      // ← добавить
+    MessagesModule,   // ← добавить
   ],
 })
 export class AppModule {}
