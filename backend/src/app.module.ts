@@ -5,6 +5,7 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { ChatsModule } from './chats/chats.module';      // ← добавить
 import { MessagesModule } from './messages/messages.module';  // ← добавить
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { MessagesModule } from './messages/messages.module';  // ← добав�
     AuthModule,
     ChatsModule,      // ← добавить
     MessagesModule,   // ← добавить
+    RedisModule,
   ],
 })
 export class AppModule {}
