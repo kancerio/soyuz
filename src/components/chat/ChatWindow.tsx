@@ -4,19 +4,20 @@ import { useState, useEffect, useRef } from 'react';
 import { Message } from '@/types/chat';
 import { mockMessages } from '@/lib/mockData';
 import AIToolsPanel from './AIToolsPanel';
+import { useLanguage } from '@/context/LanguageContext';
 
 interface ChatWindowProps {
   chatId: string;
 }
 
 export default function ChatWindow({ chatId }: ChatWindowProps) {
+  const { t } = useLanguage();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Загружаем сообщения для чата
     setMessages(mockMessages[chatId] || []);
   }, [chatId]);
 
@@ -36,14 +37,13 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       id: Date.now().toString(),
       chatId,
       text: newMessage,
-      senderId: 'user1', // текущий пользователь
+      senderId: 'user1',
       timestamp: new Date(),
       status: 'sent',
     };
     setMessages([...messages, tempMessage]);
     setNewMessage('');
 
-    // Имитируем доставку и прочтение
     setTimeout(() => {
       setMessages(prev =>
         prev.map(msg =>
@@ -60,13 +60,11 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     }, 1000);
   };
 
-  //Имитация голосовой записи
   const startVoiceRecording = () => {
     setIsRecording(true);
-    alert('Запись голосового сообщения (заглушка)');
-    // Через 2 секунды имитируем отправку голосового сообщения
+    alert(t('voice_message'));
     setTimeout(() => {
-      const voiceMessageText = '🎤 Голосовое сообщение (заглушка)';
+      const voiceMessageText = '🎤 ' + t('voice_message');
       const tempVoiceMessage: Message = {
         id: Date.now().toString(),
         chatId,
@@ -77,7 +75,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       };
       setMessages(prev => [...prev, tempVoiceMessage]);
       setIsRecording(false);
-      // Имитация статусов
       setTimeout(() => {
         setMessages(prev =>
           prev.map(msg =>
@@ -97,10 +94,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Панель ИИ-инструментов */}
       <AIToolsPanel />
-
-      {/* Область сообщений */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.map((msg) => (
           <div
@@ -121,7 +115,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                   <span>
                     {msg.status === 'sent' && '✓'}
                     {msg.status === 'delivered' && '✓✓'}
-                    {msg.status === 'read' && '✓✓ (прочитано)'}
+                    {msg.status === 'read' && '✓✓ (' + t('read') + ')'}
                   </span>
                 )}
               </div>
@@ -130,15 +124,13 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         ))}
         <div ref={messagesEndRef} />
       </div>
-
-      {/* Форма отправки с голосовой кнопкой */}
       <form onSubmit={handleSend} className="p-4 border-t dark:border-gray-700">
         <div className="flex gap-2">
           <input
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Введите сообщение..."
+            placeholder={t('type_message')}
             className="flex-1 px-3 py-2 border rounded-md dark:bg-gray-800"
           />
           <button
@@ -150,7 +142,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                 ? 'bg-red-500 animate-pulse'
                 : 'bg-purple-600 hover:bg-purple-700'
             } text-white transition`}
-            title="Голосовое сообщение"
+            title={t('voice_message')}
           >
             🎙️
           </button>
@@ -158,11 +150,11 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
             type="submit"
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
           >
-            Отправить
+            {t('send')}
           </button>
         </div>
         {isRecording && (
-          <p className="text-sm text-red-500 mt-2">Запись... (заглушка)</p>
+          <p className="text-sm text-red-500 mt-2">{t('recording')}</p>
         )}
       </form>
     </div>
