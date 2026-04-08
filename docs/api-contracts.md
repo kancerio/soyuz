@@ -244,7 +244,7 @@ curl -X POST http://localhost:8000/document-analysis \
 ```
 
 **Ответ (200 OK):**
-#json
+```json
 {
   "filename": "document.pdf",
   "summary": "Это тестовый анализ документа. Извлечены ключевые слова.",
@@ -260,7 +260,7 @@ curl -X POST http://localhost:8000/document-analysis \
 - **Базовая URL:** `http://localhost:8000` (при локальном запуске)
 - **Swagger-документация:** `http://localhost:8000/docs`
 - **Все ответы в случае ошибки** возвращают HTTP-код 4xx или 5xx с JSON-телом:
-  #json
+```json
   {
     "detail": "Описание ошибки"
   }
