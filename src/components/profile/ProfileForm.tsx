@@ -72,22 +72,22 @@ export default function ProfileForm() {
         <form onSubmit={(e) => { e.preventDefault(); handleSave(); }} className="space-y-4">
           <div>
             <label className="block text-sm font-medium">{t('name')}</label>
-            <input type="text" name="name" value={formData.name} onChange={handleChange} className="w-full p-2 border rounded dark:bg-gray-800" />
+            <input type="text" name="name" value={formData.name} onChange={handleChange} className="w-full px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700" />
           </div>
           <div>
             <label className="block text-sm font-medium">{t('country')}</label>
-            <input type="text" name="country" value={formData.country} onChange={handleChange} className="w-full p-2 border rounded dark:bg-gray-800" />
+            <input type="text" name="country" value={formData.country} onChange={handleChange} className="w-full px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700" />
           </div>
           <div>
             <label className="block text-sm font-medium">{t('language')}</label>
-            <select name="language" value={formData.language} onChange={handleChange} className="w-full p-2 border rounded dark:bg-gray-800">
+            <select name="language" value={formData.language} onChange={handleChange} className="w-full px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700">
               <option value="ru">Русский</option>
               <option value="en">English</option>
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium">{t('status')}</label>
-            <input type="text" name="status" value={formData.status} onChange={handleChange} className="w-full p-2 border rounded dark:bg-gray-800" />
+            <input type="text" name="status" value={formData.status} onChange={handleChange} className="w-full px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700" />
           </div>
           <div className="flex items-center gap-2">
             <input type="checkbox" name="showLastSeen" checked={formData.privacySettings.showLastSeen} onChange={handlePrivacyChange} />

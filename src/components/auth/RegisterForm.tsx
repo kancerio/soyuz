@@ -41,7 +41,7 @@ export default function RegisterForm() {
           type="text"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md dark:bg-gray-800"
+          className="w-full px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
           required
         />
       </div>
@@ -51,7 +51,7 @@ export default function RegisterForm() {
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md dark:bg-gray-800"
+          className="w-full px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
           required
         />
       </div>
@@ -61,7 +61,7 @@ export default function RegisterForm() {
           type="text"
           value={country}
           onChange={(e) => setCountry(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md dark:bg-gray-800"
+          className="w-full px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
         />
       </div>
       <div>
@@ -69,7 +69,7 @@ export default function RegisterForm() {
         <select
           value={language}
           onChange={(e) => setLanguage(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md dark:bg-gray-800"
+          className="w-full px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
         >
           <option value="">{t('choose_language')}</option>
           <option value="ru">Русский</option>

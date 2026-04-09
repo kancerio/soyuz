@@ -131,7 +131,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             placeholder={t('type_message')}
-            className="flex-1 px-3 py-2 border rounded-md dark:bg-gray-800"
+            className="flex-1 px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
           />
           <button
             type="button"
