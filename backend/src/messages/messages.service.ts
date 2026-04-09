@@ -2,7 +2,6 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Message } from './message.entity';
-import { ChatsService } from '../chats/chats.service';
 import { UsersService } from '../users/users.service';
 
 @Injectable()
@@ -10,11 +9,9 @@ export class MessagesService {
   constructor(
     @InjectRepository(Message)
     private messagesRepository: Repository<Message>,
-    private chatsService: ChatsService,
     private usersService: UsersService,
   ) {}
 
-  // Получить сообщения чата
   async getChatMessages(chatId: number, limit: number = 50, offset: number = 0): Promise<Message[]> {
     return this.messagesRepository.find({
       where: { chatId },
@@ -24,30 +21,21 @@ export class MessagesService {
     });
   }
 
-  // Отправить сообщение
   async sendMessage(chatId: number, userId: number, content: string): Promise<Message> {
-    const chat = await this.chatsService.findOne(chatId);
-    if (!chat) {
-      throw new NotFoundException('Чат не найден');
-    }
-
     const user = await this.usersService.findOne(userId);
     if (!user) {
       throw new NotFoundException('Пользователь не найден');
     }
 
-    // Создаём объект сообщения
-    const newMessage = new Message();
-    newMessage.content = content;
-    newMessage.userId = userId;
-    newMessage.chatId = chatId;
-    newMessage.isEdited = false;
-    newMessage.isDeleted = false;
+    const message = this.messagesRepository.create({
+      content,
+      userId,
+      chatId,
+    });
 
-    return this.messagesRepository.save(newMessage);
+    return this.messagesRepository.save(message);
   }
 
-  // Редактировать сообщение
   async editMessage(messageId: number, userId: number, newContent: string): Promise<Message> {
     const message = await this.messagesRepository.findOne({
       where: { id: messageId },
@@ -68,7 +56,6 @@ export class MessagesService {
     return this.messagesRepository.save(message);
   }
 
-  // Удалить сообщение
   async deleteMessage(messageId: number, userId: number): Promise<{ deleted: boolean }> {
     const message = await this.messagesRepository.findOne({
       where: { id: messageId },
@@ -87,5 +74,13 @@ export class MessagesService {
     await this.messagesRepository.save(message);
 
     return { deleted: true };
+  }
+
+  async getMessage(id: number): Promise<Message> {
+    const message = await this.messagesRepository.findOne({ where: { id } });
+    if (!message) {
+      throw new NotFoundException('Сообщение не найдено');
+    }
+    return message;
   }
 }
