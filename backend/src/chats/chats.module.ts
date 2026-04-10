@@ -5,9 +5,14 @@ import { ChatsService } from './chats.service';
 import { ChatGateway } from './chat.gateway';
 import { Chat } from './chat.entity';
 import { UsersModule } from '../users/users.module';
+import { MessagesModule } from '../messages/messages.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Chat]), UsersModule],
+  imports: [
+    TypeOrmModule.forFeature([Chat]),
+    UsersModule,
+    MessagesModule, // ← оставляем, только если ChatGateway нуждается в MessagesService
+  ],
   controllers: [ChatsController],
   providers: [ChatsService, ChatGateway],
   exports: [ChatsService],
