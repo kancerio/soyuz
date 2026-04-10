@@ -5,6 +5,7 @@ import { Message } from '@/types/chat';
 import { mockMessages } from '@/lib/mockData';
 import AIToolsPanel from './AIToolsPanel';
 import { useLanguage } from '@/context/LanguageContext';
+import { apiClient } from '@/lib/apiClient';
 
 interface ChatWindowProps {
   chatId: string;
@@ -18,7 +19,16 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setMessages(mockMessages[chatId] || []);
+    const fetchMessages = async () => {
+      try {
+        const data = await apiClient.getMessages(chatId); // Используем apiClient
+        setMessages(data);
+      } catch (error) {
+        console.error('Failed to fetch messages:', error);
+      }
+    };
+
+    fetchMessages();
   }, [chatId]);
 
   useEffect(() => {
@@ -29,35 +39,30 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
 
+    // Добавляем сообщение в состояние (оптимистично)
     const tempMessage: Message = {
-      id: Date.now().toString(),
-      chatId,
+        id: Date.now().toString(),
+        chatId,
       text: newMessage,
-      senderId: 'user1',
-      timestamp: new Date(),
-      status: 'sent',
-    };
+        senderId: 'user1',
+        timestamp: new Date(),
+        status: 'sent',
+      };
     setMessages([...messages, tempMessage]);
     setNewMessage('');
 
-    setTimeout(() => {
-      setMessages(prev =>
-        prev.map(msg =>
-          msg.id === tempMessage.id ? { ...msg, status: 'delivered' } : msg
-        )
-      );
-    }, 500);
-    setTimeout(() => {
-      setMessages(prev =>
-        prev.map(msg =>
-          msg.id === tempMessage.id ? { ...msg, status: 'read' } : msg
-        )
-      );
-    }, 1000);
+    // Отправляем на сервер (или в моки)
+    try {
+      await apiClient.sendMessage(chatId, newMessage);
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      // Удаляем оптимистичное сообщение, если ошибка
+      setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
+    }
   };
 
   const startVoiceRecording = () => {
@@ -80,7 +85,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
           prev.map(msg =>
             msg.id === tempVoiceMessage.id ? { ...msg, status: 'delivered' } : msg
           )
-        );
+  );
       }, 500);
       setTimeout(() => {
         setMessages(prev =>
@@ -131,7 +136,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             placeholder={t('type_message')}
-            className="flex-1 px-3 py-2 border rounded-md dark:bg-gray-800"
+            className="flex-1 px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
           />
           <button
             type="button"
