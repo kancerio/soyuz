@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  ai-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - AI_MOCK_MODE=true
+    volumes:
+      - ./models:/root/.cache/huggingface
