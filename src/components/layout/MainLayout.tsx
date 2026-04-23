@@ -15,6 +15,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const { t } = useLanguage();
   const [isCreateChatOpen, setIsCreateChatOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  
   const isAuthPage = pathname === '/login' || pathname === '/register';
 
   // редирект, если нет пользователя

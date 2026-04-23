@@ -98,6 +98,8 @@ export const apiClient = {
       body: JSON.stringify({ refreshToken: refresh }),
     }),
 
+  //Users
+  getUsers: () => request<User[]>('/users'),
   // Chats
   getChats: () => request<Chat[]>('/chats'),
   getChat: (id: number) => request<Chat>(`/chats/${id}`),
