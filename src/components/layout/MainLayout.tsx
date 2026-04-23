@@ -1,17 +1,32 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useUser } from '@/context/UserContext';
 import ThemeToggle from '@/components/ui/ThemeToggle';
 import { useLanguage } from '@/context/LanguageContext';
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
+  const { user } = useUser();
+  const router = useRouter();
   const pathname = usePathname();
   const { t } = useLanguage();
+
   const isAuthPage = pathname === '/login' || pathname === '/register';
+
+  useEffect(() => {
+    if (!user && !isAuthPage) {
+      router.push('/login');
+    }
+  }, [user, isAuthPage, router]);
 
   if (isAuthPage) {
     return <>{children}</>;
+  }
+
+  if (!user) {
+    return null; // или лоадер, но редирект уже сработает
   }
 
   return (
