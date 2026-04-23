@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Message } from '@/types/chat';
 import { apiClient } from '@/lib/apiClient';
 import { initSocket } from '@/lib/socket';
 import { useUser } from '@/context/UserContext';
@@ -12,25 +11,59 @@ interface ChatWindowProps {
   chatId: string;
 }
 
+interface LocalMessage {
+  id: number;
+  text: string;
+  senderId: number;
+  chatId: number;
+  timestamp: Date;
+  status?: 'sending' | 'sent' | 'delivered' | 'read';
+  isEdited?: boolean;
+  isDeleted?: boolean;
+}
+
 export default function ChatWindow({ chatId }: ChatWindowProps) {
   const { t } = useLanguage();
   const { user } = useUser();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
   const chatIdNum = parseInt(chatId, 10);
 
-  // WebSocket подписка
+  // WebSocket подписка и подключение к комнате
   useEffect(() => {
     if (!user) return;
     const socket = initSocket(user.id);
-    const handleNewMessage = (msg: Message) => {
-      if (msg.chatId === chatIdNum) {
-        setMessages((prev) => [...prev, msg]);
-      }
+    
+    // Присоединяемся к комнате чата
+    socket.emit('join_chat', { chatId: chatIdNum });
+    console.log(`🔗 Joined chat room: ${chatIdNum}`);
+
+    const handleNewMessage = (msg: any) => {
+      console.log('🟢 new_message received:', msg);
+      // Приводим chatId к числу для безопасного сравнения
+      if (Number(msg.chatId) !== chatIdNum) return;
+      
+      setMessages((prev) => {
+        // Избегаем дублирования по id
+        if (prev.some((m) => m.id === msg.id)) return prev;
+        return [
+          ...prev,
+          {
+            id: msg.id,
+            text: msg.content,
+            senderId: msg.userId,
+            chatId: msg.chatId,
+            timestamp: msg.createdAt ? new Date(msg.createdAt) : new Date(),
+            status: msg.userId === user.id ? 'read' : 'delivered',
+            isEdited: msg.isEdited,
+            isDeleted: msg.isDeleted,
+          },
+        ];
+      });
     };
+
     const handleMessageUpdated = (data: { id: number; content: string }) => {
       setMessages((prev) =>
         prev.map((m) =>
@@ -38,6 +71,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         )
       );
     };
+
     const handleMessageDeleted = (data: { id: number }) => {
       setMessages((prev) =>
         prev.map((m) =>
@@ -51,29 +85,32 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     socket.on('message_deleted', handleMessageDeleted);
 
     return () => {
+      socket.emit('leave_chat', { chatId: chatIdNum });
       socket.off('new_message', handleNewMessage);
       socket.off('message_updated', handleMessageUpdated);
       socket.off('message_deleted', handleMessageDeleted);
     };
   }, [chatIdNum, user]);
 
-  // Загрузка истории
+  // Загрузка истории сообщений
   useEffect(() => {
     const fetchMessages = async () => {
       setLoading(true);
       try {
         const data = await apiClient.getMessages(chatIdNum);
-        // Приведение полей к единому виду
-        const mapped = data.map((m: any) => ({
-          ...m,
+        const mapped: LocalMessage[] = data.map((m: any) => ({
+          id: m.id,
           text: m.content,
           senderId: m.userId,
-          timestamp: new Date(m.createdAt),
+          chatId: m.chatId,
+          timestamp: m.createdAt ? new Date(m.createdAt) : new Date(),
           status: 'read',
+          isEdited: m.isEdited,
+          isDeleted: m.isDeleted,
         }));
         setMessages(mapped);
       } catch (error) {
-        console.error(error);
+        console.error('Failed to load messages:', error);
       } finally {
         setLoading(false);
       }
@@ -81,6 +118,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     fetchMessages();
   }, [chatIdNum]);
 
+  // Авто-скролл вниз при новых сообщениях
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -91,27 +129,67 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     const content = newMessage;
     setNewMessage('');
 
-    // Оптимистичное добавление
+    // Оптимистичное добавление сообщения со статусом 'sending'
     const tempId = Date.now();
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: tempId,
-        text: content,
-        senderId: user?.id ?? 0,
-        chatId: chatIdNum,
-        timestamp: new Date(),
-        status: 'sent',
-      } as Message,
-    ]);
+    const tempMessage: LocalMessage = {
+      id: tempId,
+      text: content,
+      senderId: user?.id ?? 0,
+      chatId: chatIdNum,
+      timestamp: new Date(),
+      status: 'sending',
+    };
+    setMessages((prev) => [...prev, tempMessage]);
 
     try {
-      await apiClient.sendMessage(chatIdNum, content);
-      // Реальное сообщение придёт через WebSocket, удаляем временное
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      const sent = await apiClient.sendMessage(chatIdNum, content);
+      // Обновляем временное сообщение реальными данными от сервера
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === tempId
+            ? {
+                ...msg,
+                id: sent.id,
+                status: 'sent',
+                timestamp: sent.createdAt ? new Date(sent.createdAt) : new Date(),
+              }
+            : msg
+        )
+      );
+      // Имитация получения статусов (если бэкенд их не присылает)
+      setTimeout(() => {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === sent.id ? { ...msg, status: 'delivered' } : msg
+          )
+        );
+      }, 1000);
+      setTimeout(() => {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === sent.id ? { ...msg, status: 'read' } : msg
+          )
+        );
+      }, 3000);
     } catch (error) {
-      console.error(error);
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      console.error('Failed to send message:', error);
+      // При ошибке удаляем временное сообщение
+      setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
+    }
+  };
+
+  const getStatusIcon = (status?: string) => {
+    switch (status) {
+      case 'sending':
+        return '⏳';
+      case 'sent':
+        return '✓';
+      case 'delivered':
+        return '✓✓';
+      case 'read':
+        return '✓✓✓';
+      default:
+        return '';
     }
   };
 
@@ -136,10 +214,13 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                   : 'bg-gray-200 dark:bg-gray-700'
               }`}
             >
-              <p>{msg.text}</p>
+              <p>{msg.isDeleted ? '[Удалено]' : msg.text}</p>
               <div className="text-xs opacity-70 mt-1 flex justify-end gap-1">
-                <span>{new Date(msg.timestamp).toLocaleTimeString()}</span>
-                {msg.senderId === user?.id && msg.isEdited && <span>(ред.)</span>}
+                <span>{msg.timestamp.toLocaleTimeString()}</span>
+                {msg.senderId === user?.id && (
+                  <span>{getStatusIcon(msg.status)}</span>
+                )}
+                {msg.isEdited && <span>(ред.)</span>}
               </div>
             </div>
           </div>
