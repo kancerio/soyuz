@@ -1,86 +1,120 @@
-import API_CONFIG from './apiConfig';
-import { mockChats, mockMessages } from './mockData'; // Импортируем моки
+import { Chat, Message } from '@/types/chat';
+import { User } from '@/types/user';
 
-// Интерфейс для сообщения
-interface Message {
-  chatId: string;
-  text: string;
-  senderId: string;
-  timestamp: Date | string;
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
+let accessToken: string | null = null;
+let refreshToken: string | null = null;
+
+// Загрузка токенов из sessionStorage при старте
+if (typeof window !== 'undefined') {
+  accessToken = sessionStorage.getItem('accessToken');
+  refreshToken = sessionStorage.getItem('refreshToken');
 }
 
-// Функция для получения данных.
-const fetchData = async (endpoint: string): Promise<any[]> => {
-  // Пока используем моки, возвращаем данные из mockData.ts
-  if (API_CONFIG.useMocks) {
-    await new Promise(resolve => setTimeout(resolve, 100)); // Имитация задержки
+export function setTokens(access: string, refresh: string) {
+  accessToken = access;
+  refreshToken = refresh;
+  sessionStorage.setItem('accessToken', access);
+  sessionStorage.setItem('refreshToken', refresh);
+}
 
-    // Логика возврата данных в зависимости от endpoint
-    if (endpoint === '/chat/list') {
-      return mockChats; // Вернуть список чатов
-    }
+export function clearTokens() {
+  accessToken = null;
+  refreshToken = null;
+  sessionStorage.removeItem('accessToken');
+  sessionStorage.removeItem('refreshToken');
+}
 
-    // Если endpoint содержит /messages/, возвращаем моковые сообщения для конкретного чата
-    // Парсим chatId из endpoint (упрощенно: ищем ID в URL)
-    const chatId = endpoint.split('/').find(segment => /^\d+$/.test(segment));
-
-    if (chatId && mockMessages[chatId]) {
-
-    // Исправление: mockMessages теперь объект типа Record<string, Message[]>
-    // Мы просто возвращаем массив для этого chatId
-    
-      return mockMessages[chatId];
-    }
-    return []; // Если чата нет в моках, возвращаем пустой массив
+// Универсальный запрос с автоматическим обновлением токена
+async function request<T>(
+  endpoint: string,
+  options: RequestInit = {},
+  retry = true
+): Promise<T> {
+  const url = `${API_BASE}${endpoint}`;
+  const headers = new Headers(options.headers);
+  headers.set('Content-Type', 'application/json');
+  if (accessToken) {
+    headers.set('Authorization', `Bearer ${accessToken}`);
   }
 
-  //  Когда будет готов реальный бэк:
-  // const response = await fetch(`${API_CONFIG.base}${endpoint}`);
-  // if (!response.ok) throw new Error('Network response was not ok');
-  // return response.json();
-  
-  // Для теста без бэкенда вернем пустой массив или заглушку
-  return [];
-};
-
-export const apiClient = {
-  // Получить список чатов
-  getChats: async () => {
-    const data = await fetchData('/chat/list');
-    return data;
-  },
-
-  // Получить сообщения чата
-  getMessages: async (chatId: string) => {
-    const data = await fetchData(`/chat/${chatId}/messages`);
-    return data || []; // Всегда возвращаем массив, даже если пустой
-  },
-
-  // Отправить сообщение
-  sendMessage: async (chatId: string, text: string) => {
-    // Имитация отправки
-    if (API_CONFIG.useMocks) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Возвращаем структуру нового сообщения
-      return { 
-        id: Date.now().toString(), 
-        text, 
-        senderId: 'me', 
-        timestamp: new Date() 
-      };
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 401 && retry && refreshToken) {
+    try {
+      const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+      if (refreshRes.ok) {
+        const data = await refreshRes.json();
+        setTokens(data.accessToken, data.refreshToken);
+        // Повторяем исходный запрос
+        return request<T>(endpoint, options, false);
+      } else {
+        clearTokens();
+        window.location.href = '/login';
+        throw new Error('Session expired');
+      }
+    } catch (e) {
+      clearTokens();
+      throw e;
     }
-    
-    // Когда будет готов реальный бэк:
-    // const response = await fetch(`${API_CONFIG.base}/chat/${chatId}/message`, {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ text }),
-    // });
-    // return response.json();
-    
-    return {};
-  },
-};
+  }
+  if (!response.ok) {
+    let errorMsg = `Request failed: ${response.status}`;
+    try {
+      const body = await response.json();
+      errorMsg = body.message || errorMsg;
+    } catch {}
+    throw new Error(errorMsg);
+  }
+  return response.json();
+}
 
-export default apiClient;
+// API методы
+export const apiClient = {
+  // Auth
+  register: (data: { email: string; username: string; password: string }) =>
+    request<{
+      accessToken: string;
+      refreshToken: string;
+      user: { id: number; email: string; username: string; language: string };
+    }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+
+  login: (data: { email: string; password: string }) =>
+    request<{
+      accessToken: string;
+      refreshToken: string;
+      user: { id: number; email: string; username: string; language: string };
+    }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+
+  logout: () => request<{ message: string }>('/auth/logout', { method: 'POST' }),
+
+  refresh: (refresh: string) =>
+    request<{ accessToken: string; refreshToken: string }>('/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken: refresh }),
+    }),
+
+  // Chats
+  getChats: () => request<Chat[]>('/chats'),
+  getChat: (id: number) => request<Chat>(`/chats/${id}`),
+  createPrivateChat: (userId: number) =>
+    request<Chat>(`/chats/private/${userId}`, { method: 'POST' }),
+  createGroupChat: (title: string, participantIds: number[]) =>
+    request<Chat>('/chats/group', { method: 'POST', body: JSON.stringify({ title, participantIds }) }),
+  addParticipant: (chatId: number, userId: number) =>
+    request<Chat>(`/chats/${chatId}/add/${userId}`, { method: 'POST' }),
+
+  // Messages
+  getMessages: (chatId: number, limit = 50, offset = 0) =>
+    request<Message[]>(`/messages/chat/${chatId}?limit=${limit}&offset=${offset}`),
+  sendMessage: (chatId: number, content: string) =>
+    request<Message>(`/messages/chat/${chatId}`, { method: 'POST', body: JSON.stringify({ content }) }),
+  editMessage: (messageId: number, content: string) =>
+    request<Message>(`/messages/${messageId}`, { method: 'PUT', body: JSON.stringify({ content }) }),
+  deleteMessage: (messageId: number) =>
+    request<{ deleted: boolean }>(`/messages/${messageId}`, { method: 'DELETE' }),
+};
