@@ -1,4 +1,3 @@
-// src/context/UserContext.tsx
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
@@ -9,6 +8,7 @@ import { User } from '@/types/user';
 
 interface UserContextType {
   user: User | null;
+  isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -19,6 +19,7 @@ const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export const UserProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
@@ -27,6 +28,7 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
     if (storedUser) {
       setUser(JSON.parse(storedUser));
     }
+    setIsLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -79,12 +81,11 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
       const newUser = { ...user, ...data };
       setUser(newUser);
       sessionStorage.setItem('user', JSON.stringify(newUser));
-      // TODO: вызов API обновления профиля, когда бэкенд добавит
     }
   };
 
   return (
-    <UserContext.Provider value={{ user, login, register, logout, updateUser }}>
+    <UserContext.Provider value={{ user, isLoading, login, register, logout, updateUser }}>
       {children}
     </UserContext.Provider>
   );
