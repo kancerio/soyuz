@@ -1,19 +1,19 @@
 export interface Message {
-  id: string;
-  chatId: string;
+  id: number;
   text: string;
-  senderId: string;
+  senderId: number;
+  chatId: number;
   timestamp: Date;
-  status: 'sent' | 'delivered' | 'read';
+  status?: 'sent' | 'delivered' | 'read';
+  isEdited?: boolean;
+  isDeleted?: boolean;
+  createdAt?: Date;
 }
 
 export interface Chat {
-  id: string;
-  name: string;
-  type: 'personal' | 'group';
-  avatar?: string;
-  lastMessage?: string;
-  lastMessageTime?: Date;
-  unreadCount: number;
-  participants: string[];
+  id: number;
+  title: string | null;
+  isGroup: boolean;
+  createdAt: Date;
+  // дополнительные поля по мере появления
 }
