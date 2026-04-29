@@ -1,13 +1,49 @@
-version: '3.8'
-
 services:
-  ai-api:
+  postgres:
+    image: postgres:15-alpine
+    container_name: messenger-postgres
+    environment:
+      POSTGRES_USER: messenger
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secretpassword}
+      POSTGRES_DB: messenger_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - messenger-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: messenger-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - messenger-network
+    restart: unless-stopped
+
+  ai-service:
     build:
       context: .
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile   # твой Dockerfile
+    container_name: messenger-ai
     ports:
-      - "8001:8000"
+      - "8001:8000"                    # чтобы не конфликтовать с другими, используй 8001
     environment:
       - AI_MOCK_MODE=true
     volumes:
       - ./models:/root/.cache/huggingface
+    networks:
+      - messenger-network
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
+networks:
+  messenger-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

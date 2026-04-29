@@ -3,8 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useLanguage } from '@/context/LanguageContext';
 
 export default function LoginForm() {
+  const { t } = useLanguage();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,7 +23,7 @@ export default function LoginForm() {
 
     // Простая валидация
     if (!email || !password) {
-      setError('Заполните все поля');
+      setError(t('fill_all_fields') || 'Fill all fields');
       return;
     }
 
@@ -38,7 +40,7 @@ export default function LoginForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium mb-1">Email или телефон</label>
+        <label className="block text-sm font-medium mb-1">{t('email_or_phone')}</label>
         <input
           type="text"
           value={email}
@@ -48,7 +50,7 @@ export default function LoginForm() {
         />
       </div>
       <div>
-        <label className="block text-sm font-medium mb-1">Пароль</label>
+        <label className="block text-sm font-medium mb-1">{t('password')}</label>
         <input
           type="password"
           value={password}
@@ -62,12 +64,12 @@ export default function LoginForm() {
         type="submit"
         className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition"
       >
-        Войти
+        {t('login')}
       </button>
       <p className="text-center text-sm">
-        Нет аккаунта?{' '}
+        {t('no_account')}
         <Link href="/register" className="text-blue-600 hover:underline">
-          Зарегистрироваться
+          {t('register')}
         </Link>
       </p>
     </form>
