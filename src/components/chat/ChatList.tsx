@@ -1,16 +1,36 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { apiClient } from '@/lib/apiClient';
 import { Chat } from '@/types/chat';
-import { mockChats } from '@/lib/mockData';
 
 export default function ChatList() {
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [loading, setLoading] = useState(true);
   const pathname = usePathname();
+
+  useEffect(() => {
+    const fetchChats = async () => {
+      try {
+        setLoading(true);
+        const data = await apiClient.getChats();
+        setChats(data);
+      } catch (error) {
+        console.error('Failed to fetch chats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchChats();
+  }, []);
+
+  if (loading) return <div className="p-4 text-center">Загрузка...</div>;
 
   return (
     <div className="flex flex-col h-full">
-      {mockChats.map((chat) => (
+      {chats.map((chat) => (
         <Link
           key={chat.id}
           href={`/chat/${chat.id}`}
