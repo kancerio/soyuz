@@ -8,6 +8,7 @@ import {
   MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { Logger } from '@nestjs/common';
 import { ChatsService } from './chats.service';
 import { MessagesService } from '../messages/messages.service';
 
@@ -21,6 +22,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
+  private readonly logger = new Logger(ChatGateway.name);
+
   // socketId -> userId
   private socketToUser: Map<string, number> = new Map();
   // userId -> socketId
@@ -32,19 +35,22 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private chatsService: ChatsService,
     private messagesService: MessagesService,
   ) {
-    console.log('🔥 ChatGateway initialized');
+    this.logger.log('🔥 ChatGateway initialized');
   }
 
   // ========== ПОДКЛЮЧЕНИЕ / ОТКЛЮЧЕНИЕ ==========
 
   handleConnection(client: Socket) {
-    console.log(`🔌 Client connected: ${client.id}`);
+    const timestamp = new Date().toISOString();
+    this.logger.log(`🔌 WebSocket connection | socket_id: ${client.id} | timestamp: ${timestamp}`);
   }
 
   async handleDisconnect(client: Socket) {
-    console.log(`🔌 Client disconnected: ${client.id}`);
-    
+    const timestamp = new Date().toISOString();
     const userId = this.socketToUser.get(client.id);
+    
+    this.logger.log(`🔌 WebSocket disconnection | socket_id: ${client.id} | user_id: ${userId || 'unknown'} | timestamp: ${timestamp}`);
+    
     if (userId) {
       // Удаляем из маппингов
       this.socketToUser.delete(client.id);
@@ -52,7 +58,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       
       // Уведомляем всех, что пользователь офлайн
       this.server.emit('user_offline', { userId });
-      console.log(`📢 User ${userId} went offline`);
+      this.logger.log(`📢 User offline broadcast | user_id: ${userId} | timestamp: ${timestamp}`);
     }
   }
 
@@ -63,7 +69,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { userId: number },
   ) {
+    const timestamp = new Date().toISOString();
     const { userId } = data;
+    
+    this.logger.log(`🔐 Auth attempt | socket_id: ${client.id} | user_id: ${userId} | timestamp: ${timestamp}`);
     
     // Сохраняем маппинги
     this.socketToUser.set(client.id, userId);
@@ -80,11 +89,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     for (const chatId of chatIds) {
       const roomName = `chat_${chatId}`;
       client.join(roomName);
-      console.log(`User ${userId} joined room ${roomName}`);
+      this.logger.log(`🏠 User joined room | user_id: ${userId} | room: ${roomName} | timestamp: ${timestamp}`);
     }
     
     // Уведомляем всех, что пользователь онлайн
     this.server.emit('user_online', { userId });
+    this.logger.log(`📢 User online broadcast | user_id: ${userId} | timestamp: ${timestamp}`);
     
     // Подтверждаем аутентификацию
     client.emit('auth_success', { 
@@ -93,7 +103,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       chats: chatIds,
     });
     
-    console.log(`✅ User ${userId} authenticated, joined ${chatIds.length} chats`);
+    this.logger.log(`✅ Auth success | user_id: ${userId} | joined_chats: ${chatIds.length} | timestamp: ${timestamp}`);
   }
 
   // ========== ПРИСОЕДИНИТЬСЯ К ЧАТУ ==========
@@ -103,10 +113,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { chatId: number },
   ) {
+    const timestamp = new Date().toISOString();
     const { chatId } = data;
     const userId = this.socketToUser.get(client.id);
     
     if (!userId) {
+      this.logger.warn(`⚠️ Join chat failed - not authenticated | socket_id: ${client.id} | chat_id: ${chatId} | timestamp: ${timestamp}`);
       client.emit('error', { message: 'Not authenticated' });
       return;
     }
@@ -114,6 +126,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Проверяем, есть ли доступ к чату
     const chat = await this.chatsService.findOne(chatId);
     if (!chat) {
+      this.logger.warn(`⚠️ Join chat failed - chat not found | user_id: ${userId} | chat_id: ${chatId} | timestamp: ${timestamp}`);
       client.emit('error', { message: 'Chat not found' });
       return;
     }
@@ -129,7 +142,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.userChats.get(userId)!.add(chatId);
     
     client.emit('chat_joined', { chatId });
-    console.log(`User ${userId} joined chat ${chatId}`);
+    this.logger.log(`🏠 User joined chat room | user_id: ${userId} | chat_id: ${chatId} | room: ${roomName} | timestamp: ${timestamp}`);
   }
 
   // ========== ПОКИНУТЬ ЧАТ ==========
@@ -139,6 +152,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { chatId: number },
   ) {
+    const timestamp = new Date().toISOString();
     const { chatId } = data;
     const userId = this.socketToUser.get(client.id);
     
@@ -151,7 +165,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.userChats.get(userId)?.delete(chatId);
     
     client.emit('chat_left', { chatId });
-    console.log(`User ${userId} left chat ${chatId}`);
+    this.logger.log(`🚪 User left chat room | user_id: ${userId} | chat_id: ${chatId} | room: ${roomName} | timestamp: ${timestamp}`);
   }
 
   // ========== ОТПРАВКА СООБЩЕНИЯ ==========
@@ -161,10 +175,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { chatId: number; content: string },
   ) {
+    const startTime = Date.now();
+    const timestamp = new Date().toISOString();
     const { chatId, content } = data;
     const userId = this.socketToUser.get(client.id);
     
     if (!userId) {
+      this.logger.warn(`⚠️ Send message failed - not authenticated | socket_id: ${client.id} | chat_id: ${chatId} | timestamp: ${timestamp}`);
       client.emit('error', { message: 'Not authenticated' });
       return;
     }
@@ -173,11 +190,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Сохраняем сообщение в БД
       const message = await this.messagesService.sendMessage(chatId, userId, content);
       
-      // 🚀 РАССЫЛАЕМ ВСЕМ В КОМНАТЕ (включая отправителя)
+      const dbSaveTime = Date.now() - startTime;
+      
+      // Рассылаем всем в комнате (включая отправителя)
       this.server.to(`chat_${chatId}`).emit('new_message', message);
       
-      console.log(`📨 Message sent to chat ${chatId} from user ${userId}`);
+      const broadcastTime = Date.now() - startTime - dbSaveTime;
+      
+      this.logger.log(`📨 Message sent | message_id: ${message.id} | user_id: ${userId} | chat_id: ${chatId} | db_save_ms: ${dbSaveTime} | broadcast_ms: ${broadcastTime} | timestamp: ${timestamp}`);
     } catch (error) {
+      this.logger.error(`❌ Send message error | user_id: ${userId} | chat_id: ${chatId} | error: ${error.message} | timestamp: ${timestamp}`);
       client.emit('error', { message: error.message });
     }
   }
@@ -189,10 +211,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { messageId: number; content: string },
   ) {
+    const timestamp = new Date().toISOString();
     const { messageId, content } = data;
     const userId = this.socketToUser.get(client.id);
     
     if (!userId) {
+      this.logger.warn(`⚠️ Edit message failed - not authenticated | socket_id: ${client.id} | message_id: ${messageId} | timestamp: ${timestamp}`);
       client.emit('error', { message: 'Not authenticated' });
       return;
     }
@@ -208,8 +232,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         editedAt: message.editedAt,
       });
       
-      console.log(`📝 Message ${messageId} edited by user ${userId}`);
+      this.logger.log(`📝 Message edited | message_id: ${messageId} | user_id: ${userId} | chat_id: ${message.chatId} | timestamp: ${timestamp}`);
     } catch (error) {
+      this.logger.error(`❌ Edit message error | user_id: ${userId} | message_id: ${messageId} | error: ${error.message} | timestamp: ${timestamp}`);
       client.emit('error', { message: error.message });
     }
   }
@@ -221,10 +246,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { messageId: number },
   ) {
+    const timestamp = new Date().toISOString();
     const { messageId } = data;
     const userId = this.socketToUser.get(client.id);
     
     if (!userId) {
+      this.logger.warn(`⚠️ Delete message failed - not authenticated | socket_id: ${client.id} | message_id: ${messageId} | timestamp: ${timestamp}`);
       client.emit('error', { message: 'Not authenticated' });
       return;
     }
@@ -239,8 +266,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         chatId: message.chatId,
       });
       
-      console.log(`🗑️ Message ${messageId} deleted by user ${userId}`);
+      this.logger.log(`🗑️ Message deleted | message_id: ${messageId} | user_id: ${userId} | chat_id: ${message.chatId} | timestamp: ${timestamp}`);
     } catch (error) {
+      this.logger.error(`❌ Delete message error | user_id: ${userId} | message_id: ${messageId} | error: ${error.message} | timestamp: ${timestamp}`);
       client.emit('error', { message: error.message });
     }
   }
@@ -252,6 +280,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { chatId: number; isTyping: boolean },
   ) {
+    const timestamp = new Date().toISOString();
     const { chatId, isTyping } = data;
     const userId = this.socketToUser.get(client.id);
     
@@ -263,6 +292,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       chatId,
       isTyping,
     });
+    
+    this.logger.debug(`⌨️ Typing indicator | user_id: ${userId} | chat_id: ${chatId} | is_typing: ${isTyping} | timestamp: ${timestamp}`);
   }
 
   // ========== ПОЛУЧИТЬ ОНЛАЙН-СТАТУС ПОЛЬЗОВАТЕЛЯ ==========
@@ -272,6 +303,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { userId: number },
   ) {
+    const timestamp = new Date().toISOString();
     const { userId } = data;
     const isOnline = this.userToSocket.has(userId);
     
@@ -279,14 +311,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       userId,
       isOnline,
     });
+    
+    this.logger.debug(`🔍 User status check | requested_user: ${userId} | is_online: ${isOnline} | timestamp: ${timestamp}`);
   }
 
-  // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
+  // ========== ПОЛУЧИТЬ ВСЕХ ОНЛАЙН ПОЛЬЗОВАТЕЛЕЙ ==========
 
-  // Получить всех онлайн пользователей
   @SubscribeMessage('get_online_users')
   async handleGetOnlineUsers(@ConnectedSocket() client: Socket) {
+    const timestamp = new Date().toISOString();
     const onlineUsers = Array.from(this.userToSocket.keys());
+    
     client.emit('online_users', { users: onlineUsers });
+    
+    this.logger.debug(`👥 Online users requested | online_count: ${onlineUsers.length} | users: [${onlineUsers.join(', ')}] | timestamp: ${timestamp}`);
   }
 }

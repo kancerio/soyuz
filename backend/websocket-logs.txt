@@ -1,0 +1,62 @@
+
+> backend@0.0.1 start:dev
+> nest start --watch
+
+[2J[3J[H[[90m12:26:09 PM[0m] Starting compilation in watch mode...
+
+[[90m12:26:13 PM[0m] Found 0 errors. Watching for file changes.
+
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +42ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mTypeOrmModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPassportModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mRedisModule dependencies initialized[39m[38;5;3m +2ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +23ms[39m
+✅ Redis connected
+query: SELECT version()
+query: SELECT * FROM current_schema()
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mTypeOrmCoreModule dependencies initialized[39m[38;5;3m +77ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mTypeOrmModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mTypeOrmModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mTypeOrmModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[ChatGateway] [39m[32m🔥 ChatGateway initialized[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mUsersModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMessagesModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mChatsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mChatGateway subscribed to the "auth" message[39m[38;5;3m +28ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mChatGateway subscribed to the "join_chat" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mChatGateway subscribed to the "leave_chat" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mChatGateway subscribed to the "send_message" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mChatGateway subscribed to the "edit_message" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mChatGateway subscribed to the "delete_message" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mChatGateway subscribed to the "typing" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mChatGateway subscribed to the "get_user_status" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mChatGateway subscribed to the "get_online_users" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mUsersController {/users}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/users, GET} route[39m[38;5;3m +3ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/users, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/users/me, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/users/language, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/auth}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/register, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/logout, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/refresh, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mChatsController {/chats}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/chats, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/chats/:id, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/chats/private/:userId, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/chats/group, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/chats/:chatId/add/:userId, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mMessagesController {/messages}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/messages/chat/:chatId, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/messages/chat/:chatId, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/messages/:messageId, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/messages/:messageId, DELETE} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 8236  - [39m05/06/2026, 12:26:15 PM [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +2ms[39m
+Application is running on: http://localhost:3000
