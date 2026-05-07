@@ -1,11 +1,14 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
-import { initSocket } from '@/lib/socket';
+import { initSocket, getSocket } from '@/lib/socket';
 import { useUser } from '@/context/UserContext';
 import { useLanguage } from '@/context/LanguageContext';
+import { useSocketStatus } from '@/context/SocketContext';
 import AIToolsPanel from './AIToolsPanel';
+import GroupMembersModal from './GroupMembersModal';
 
 interface ChatWindowProps {
   chatId: string;
@@ -23,30 +26,59 @@ interface LocalMessage {
 }
 
 export default function ChatWindow({ chatId }: ChatWindowProps) {
+  const router = useRouter();
   const { t } = useLanguage();
   const { user } = useUser();
+  const { isConnected } = useSocketStatus();
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatIdNum = parseInt(chatId, 10);
+  const [chatInfo, setChatInfo] = useState<{ title: string | null; isGroup: boolean } | null>(null);
+  const [membersMap, setMembersMap] = useState<Map<number, string>>(new Map());
+  const [showMembersModal, setShowMembersModal] = useState(false);
+  const [membersModalKey, setMembersModalKey] = useState(0);
 
-  // WebSocket подписка и подключение к комнате
+  // Загрузка информации о чате
+  useEffect(() => {
+    const fetchChatInfo = async () => {
+      try {
+        const info = await apiClient.getChat(chatIdNum);
+        setChatInfo(info);
+      } catch (error) {
+        console.error('Failed to fetch chat info', error);
+      }
+    };
+    fetchChatInfo();
+  }, [chatIdNum]);
+
+  // Загрузка участников группы (только для групповых чатов)
+  useEffect(() => {
+    if (!chatInfo?.isGroup) return;
+    const fetchMembers = async () => {
+      try {
+        const members = await apiClient.getChatMembers(chatIdNum);
+        const map = new Map<number, string>();
+        members.forEach((m: any) => map.set(m.userId, m.role));
+        setMembersMap(map);
+      } catch (error) {
+        console.error('Failed to load members', error);
+      }
+    };
+    fetchMembers();
+  }, [chatInfo?.isGroup, chatIdNum, membersModalKey]);
+
+  // WebSocket подписка и присоединение к комнате
   useEffect(() => {
     if (!user) return;
     const socket = initSocket(user.id);
-    
-    // Присоединяемся к комнате чата
     socket.emit('join_chat', { chatId: chatIdNum });
     console.log(`🔗 Joined chat room: ${chatIdNum}`);
 
     const handleNewMessage = (msg: any) => {
-      console.log('🟢 new_message received:', msg);
-      // Приводим chatId к числу для безопасного сравнения
       if (Number(msg.chatId) !== chatIdNum) return;
-      
       setMessages((prev) => {
-        // Избегаем дублирования по id
         if (prev.some((m) => m.id === msg.id)) return prev;
         return [
           ...prev,
@@ -56,7 +88,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
             senderId: msg.userId,
             chatId: msg.chatId,
             timestamp: msg.createdAt ? new Date(msg.createdAt) : new Date(),
-            status: msg.userId === user.id ? 'read' : 'delivered',
+            status: msg.userId === user.id ? ('read' as const) : ('delivered' as const),
             isEdited: msg.isEdited,
             isDeleted: msg.isDeleted,
           },
@@ -104,7 +136,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
           senderId: m.userId,
           chatId: m.chatId,
           timestamp: m.createdAt ? new Date(m.createdAt) : new Date(),
-          status: 'read',
+          status: 'read' as const,
           isEdited: m.isEdited,
           isDeleted: m.isDeleted,
         }));
@@ -118,7 +150,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     fetchMessages();
   }, [chatIdNum]);
 
-  // Авто-скролл вниз при новых сообщениях
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -129,7 +160,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     const content = newMessage;
     setNewMessage('');
 
-    // Оптимистичное добавление сообщения со статусом 'sending'
     const tempId = Date.now();
     const tempMessage: LocalMessage = {
       id: tempId,
@@ -141,39 +171,74 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     };
     setMessages((prev) => [...prev, tempMessage]);
 
+    let fallbackTimer: NodeJS.Timeout;
+    const socket = getSocket();
+
+    const cleanupFallback = () => {
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+    };
+
+    const onNewMessageConfirm = (msg: any) => {
+      if (msg.userId === user?.id && msg.content === content && msg.chatId === chatIdNum) {
+        cleanupFallback();
+        socket?.off('new_message', onNewMessageConfirm);
+        setMessages((prev) =>
+          prev.map((msgItem) =>
+            msgItem.id === tempId
+              ? {
+                  ...msgItem,
+                  id: msg.id,
+                  status: 'sent' as const,
+                  timestamp: msg.createdAt ? new Date(msg.createdAt) : new Date(),
+                }
+              : msgItem
+          )
+        );
+        setTimeout(() => {
+          setMessages((prev) =>
+            prev.map((msgItem) =>
+              msgItem.id === msg.id ? { ...msgItem, status: 'delivered' as const } : msgItem
+            )
+          );
+        }, 1000);
+        setTimeout(() => {
+          setMessages((prev) =>
+            prev.map((msgItem) =>
+              msgItem.id === msg.id ? { ...msgItem, status: 'read' as const } : msgItem
+            )
+          );
+        }, 3000);
+      }
+    };
+    socket?.on('new_message', onNewMessageConfirm);
+
+    fallbackTimer = setTimeout(async () => {
+      console.log('Fallback: reloading messages');
+      socket?.off('new_message', onNewMessageConfirm);
+      try {
+        const fresh = await apiClient.getMessages(chatIdNum);
+        const mapped: LocalMessage[] = fresh.map((m: any) => ({
+          id: m.id,
+          text: m.content,
+          senderId: m.userId,
+          chatId: m.chatId,
+          timestamp: m.createdAt ? new Date(m.createdAt) : new Date(),
+          status: 'read' as const,
+          isEdited: m.isEdited,
+          isDeleted: m.isDeleted,
+        }));
+        setMessages(mapped);
+      } catch (err) {
+        console.error('Fallback failed:', err);
+      }
+    }, 5000);
+
     try {
-      const sent = await apiClient.sendMessage(chatIdNum, content);
-      // Обновляем временное сообщение реальными данными от сервера
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === tempId
-            ? {
-                ...msg,
-                id: sent.id,
-                status: 'sent',
-                timestamp: sent.createdAt ? new Date(sent.createdAt) : new Date(),
-              }
-            : msg
-        )
-      );
-      // Имитация получения статусов (если бэкенд их не присылает)
-      setTimeout(() => {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === sent.id ? { ...msg, status: 'delivered' } : msg
-          )
-        );
-      }, 1000);
-      setTimeout(() => {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === sent.id ? { ...msg, status: 'read' } : msg
-          )
-        );
-      }, 3000);
+      await apiClient.sendMessage(chatIdNum, content);
     } catch (error) {
       console.error('Failed to send message:', error);
-      // При ошибке удаляем временное сообщение
+      cleanupFallback();
+      socket?.off('new_message', onNewMessageConfirm);
       setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
     }
   };
@@ -193,11 +258,48 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     }
   };
 
+  const getRoleSymbol = (role?: string) => {
+    if (role === 'owner') return '👑 ';
+    if (role === 'admin') return '⭐ ';
+    return '';
+  };
+
+  const refreshRoles = () => {
+    setMembersModalKey(prev => prev + 1);
+  };
+
   if (loading) return <div className="p-4">Загрузка сообщений...</div>;
 
   return (
     <div className="flex flex-col h-full">
       <AIToolsPanel />
+      {/* Верхняя панель с индикатором соединения и кнопкой участников */}
+      <div className="p-2 border-b dark:border-gray-700 flex justify-between items-center">
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></span>
+          <span className="text-sm">{isConnected ? 'Online' : 'Offline'}</span>
+        </div>
+        {chatInfo?.isGroup && (
+          <button
+            onClick={() => setShowMembersModal(true)}
+            className="text-sm text-blue-600 hover:underline"
+          >
+            Участники ({membersMap.size})
+          </button>
+        )}
+      </div>
+      {/* Заголовок группы (кликабельный) */}
+      {chatInfo?.isGroup && (
+        <div
+          onClick={() => setShowMembersModal(true)}
+          className="p-2 border-b cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 text-center"
+        >
+          <h2 className="text-lg font-semibold">{chatInfo.title || 'Группа'}</h2>
+          <div className="text-xs text-gray-500">Нажмите для просмотра участников</div>
+        </div>
+      )}
+
+      {/* Список сообщений */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
           <div className="text-center text-gray-500">Нет сообщений. Напишите первое!</div>
@@ -214,7 +316,14 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                   : 'bg-gray-200 dark:bg-gray-700'
               }`}
             >
-              <p>{msg.isDeleted ? '[Удалено]' : msg.text}</p>
+              <p>
+                {msg.senderId !== user?.id && (
+                  <span className="font-semibold">
+                    {getRoleSymbol(membersMap.get(msg.senderId))}
+                  </span>
+                )}
+                {msg.isDeleted ? '[Удалено]' : msg.text}
+              </p>
               <div className="text-xs opacity-70 mt-1 flex justify-end gap-1">
                 <span>{msg.timestamp.toLocaleTimeString()}</span>
                 {msg.senderId === user?.id && (
@@ -227,6 +336,8 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         ))}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Форма отправки */}
       <form onSubmit={handleSend} className="p-4 border-t dark:border-gray-700">
         <div className="flex gap-2">
           <input
@@ -244,6 +355,21 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
           </button>
         </div>
       </form>
+
+      {/* Модалка участников группы */}
+      {chatInfo?.isGroup && (
+        <GroupMembersModal
+          key={membersModalKey}
+          isOpen={showMembersModal}
+          onClose={() => setShowMembersModal(false)}
+          chatId={chatIdNum}
+          onRoleChanged={refreshRoles}
+          onLeave={() => {
+            setShowMembersModal(false);
+            router.push('/chat');
+          }}
+        />
+      )}
     </div>
   );
 }
