@@ -1,19 +1,20 @@
 export interface Message {
-  id: string;
-  chatId: string;
-  text: string;
-  senderId: string;
-  timestamp: Date;
-  status: 'sent' | 'delivered' | 'read';
+  id: number;
+  text?: string;      // для моков/групп
+  content?: string;   // для бэкенда
+  senderId?: number;  // для моков/групп
+  userId?: number;    // для бэкенда
+  chatId: number;
+  timestamp?: Date;
+  createdAt?: Date | string;
+  status?: 'sent' | 'delivered' | 'read';
+  isEdited?: boolean;
+  isDeleted?: boolean;
 }
 
 export interface Chat {
-  id: string;
-  name: string;
-  type: 'personal' | 'group';
-  avatar?: string;
-  lastMessage?: string;
-  lastMessageTime?: Date;
-  unreadCount: number;
-  participants: string[];
+  id: number;
+  title: string | null;
+  isGroup: boolean;
+  createdAt: Date;
 }

@@ -34,5 +34,7 @@
   "type_message": "Type a message...",
   "yes": "Yes",
   "no": "No",
-  "name": "Name"
+  "name": "Name",
+  "group_chat": "Group chat",
+  "private_chat": "Private chat"
 }

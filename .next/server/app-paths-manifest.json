@@ -1,6 +1,7 @@
 {
+  "/profile/page": "app/profile/page.js",
   "/login/page": "app/login/page.js",
-  "/chat/page": "app/chat/page.js",
-  "/page": "app/page.js",
-  "/chat/[id]/page": "app/chat/[id]/page.js"
+  "/register/page": "app/register/page.js",
+  "/chat/[id]/page": "app/chat/[id]/page.js",
+  "/chat/page": "app/chat/page.js"
 }

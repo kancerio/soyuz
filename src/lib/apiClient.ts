@@ -1,86 +1,209 @@
-import API_CONFIG from './apiConfig';
-import { mockChats, mockMessages } from './mockData'; // Импортируем моки
+import { Chat, Message } from '@/types/chat';
+import { User } from '@/types/user';
+import { mockGroupStore } from './mockGroupStore';
 
-// Интерфейс для сообщения
-interface Message {
-  chatId: string;
-  text: string;
-  senderId: string;
-  timestamp: Date | string;
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
+let accessToken: string | null = null;
+let refreshToken: string | null = null;
+
+if (typeof window !== 'undefined') {
+  accessToken = sessionStorage.getItem('accessToken');
+  refreshToken = sessionStorage.getItem('refreshToken');
 }
 
-// Функция для получения данных.
-const fetchData = async (endpoint: string): Promise<any[]> => {
-  // Пока используем моки, возвращаем данные из mockData.ts
-  if (API_CONFIG.useMocks) {
-    await new Promise(resolve => setTimeout(resolve, 100)); // Имитация задержки
+export function setTokens(access: string, refresh: string) {
+  accessToken = access;
+  refreshToken = refresh;
+  sessionStorage.setItem('accessToken', access);
+  sessionStorage.setItem('refreshToken', refresh);
+}
 
-    // Логика возврата данных в зависимости от endpoint
-    if (endpoint === '/chat/list') {
-      return mockChats; // Вернуть список чатов
-    }
+export function clearTokens() {
+  accessToken = null;
+  refreshToken = null;
+  sessionStorage.removeItem('accessToken');
+  sessionStorage.removeItem('refreshToken');
+}
 
-    // Если endpoint содержит /messages/, возвращаем моковые сообщения для конкретного чата
-    // Парсим chatId из endpoint (упрощенно: ищем ID в URL)
-    const chatId = endpoint.split('/').find(segment => /^\d+$/.test(segment));
-
-    if (chatId && mockMessages[chatId]) {
-
-    // Исправление: mockMessages теперь объект типа Record<string, Message[]>
-    // Мы просто возвращаем массив для этого chatId
-    
-      return mockMessages[chatId];
-    }
-    return []; // Если чата нет в моках, возвращаем пустой массив
+async function request<T>(
+  endpoint: string,
+  options: RequestInit = {},
+  retry = true
+): Promise<T> {
+  const url = `${API_BASE}${endpoint}`;
+  const headers = new Headers(options.headers);
+  headers.set('Content-Type', 'application/json');
+  if (accessToken) {
+    headers.set('Authorization', `Bearer ${accessToken}`);
   }
 
-  //  Когда будет готов реальный бэк:
-  // const response = await fetch(`${API_CONFIG.base}${endpoint}`);
-  // if (!response.ok) throw new Error('Network response was not ok');
-  // return response.json();
-  
-  // Для теста без бэкенда вернем пустой массив или заглушку
-  return [];
-};
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 401 && retry && refreshToken) {
+    try {
+      const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+      if (refreshRes.ok) {
+        const data = await refreshRes.json();
+        setTokens(data.accessToken, data.refreshToken);
+        return request<T>(endpoint, options, false);
+      } else {
+        clearTokens();
+        window.location.href = '/login';
+        throw new Error('Session expired');
+      }
+    } catch (e) {
+      clearTokens();
+      throw e;
+    }
+  }
+  if (!response.ok) {
+    let errorMsg = `Request failed: ${response.status}`;
+    try {
+      const body = await response.json();
+      errorMsg = body.message || errorMsg;
+    } catch {}
+    throw new Error(errorMsg);
+  }
+  return response.json();
+}
 
 export const apiClient = {
-  // Получить список чатов
+  // Auth
+  register: (data: { email: string; username: string; password: string }) =>
+    request<{
+      accessToken: string;
+      refreshToken: string;
+      user: { id: number; email: string; username: string; language: string };
+    }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+
+  login: (data: { email: string; password: string }) =>
+    request<{
+      accessToken: string;
+      refreshToken: string;
+      user: { id: number; email: string; username: string; language: string };
+    }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+
+  logout: () => request<{ message: string }>('/auth/logout', { method: 'POST' }),
+
+  refresh: (refresh: string) =>
+    request<{ accessToken: string; refreshToken: string }>('/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken: refresh }),
+    }),
+
+  // Users
+  getUsers: () => request<User[]>('/users'),
+
+  // Chats (объединяем реальные чаты и группы из хранилища)
   getChats: async () => {
-    const data = await fetchData('/chat/list');
-    return data;
+    // Реальные чаты с бэкенда (личные)
+    const realChats = await request<Chat[]>('/chats');
+    
+    // Локальные группы из mockGroupStore
+    const allGroups = mockGroupStore.getGroups();
+    const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
+    
+    // Фильтруем группы: оставляем только те, где текущий пользователь – участник
+    const userGroups = allGroups.filter(group =>
+      group.members.some(member => member.userId === currentUser.id)
+    );
+    
+    const groupChats: Chat[] = userGroups.map(group => ({
+      id: group.id,
+      title: group.title,
+      isGroup: true,
+      createdAt: new Date(),
+    }));
+    
+    return [...realChats, ...groupChats];
   },
-
-  // Получить сообщения чата
-  getMessages: async (chatId: string) => {
-    const data = await fetchData(`/chat/${chatId}/messages`);
-    return data || []; // Всегда возвращаем массив, даже если пустой
-  },
-
-  // Отправить сообщение
-  sendMessage: async (chatId: string, text: string) => {
-    // Имитация отправки
-    if (API_CONFIG.useMocks) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Возвращаем структуру нового сообщения
-      return { 
-        id: Date.now().toString(), 
-        text, 
-        senderId: 'me', 
-        timestamp: new Date() 
-      };
+  getChat: async (id: number) => {
+    // Сначала проверяем, есть ли группа в локальном хранилище
+    const group = mockGroupStore.getGroup(id);
+    if (group) {
+      return { id: group.id, title: group.title, isGroup: true, createdAt: new Date() } as Chat;
     }
-    
-    // Когда будет готов реальный бэк:
-    // const response = await fetch(`${API_CONFIG.base}/chat/${chatId}/message`, {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ text }),
-    // });
-    // return response.json();
-    
-    return {};
+    // Иначе запрашиваем с бэкенда (для личных чатов)
+    return request<Chat>(`/chats/${id}`);
   },
-};
+  createPrivateChat: (userId: number) =>
+    request<Chat>(`/chats/private/${userId}`, { method: 'POST' }),
+  addParticipant: (chatId: number, userId: number) =>
+    request<Chat>(`/chats/${chatId}/add/${userId}`, { method: 'POST' }),
 
-export default apiClient;
+  // Группы (заглушки)
+  createGroupChat: async (title: string, participantIds: number[]) => {
+    const allUsers = await apiClient.getUsers();
+    const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
+    const newGroup = mockGroupStore.createGroup(title, currentUser.id, participantIds, allUsers);
+    return { id: newGroup.id, title: newGroup.title, isGroup: true, createdAt: new Date() } as Chat;
+  },
+  getChatMembers: async (chatId: number) => {
+    return mockGroupStore.getMembers(chatId);
+  },
+  updateMemberRole: async (chatId: number, userId: number, role: string) => {
+    mockGroupStore.updateMemberRole(chatId, userId, role as any);
+  },
+  leaveGroup: async (chatId: number) => {
+    const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
+    mockGroupStore.removeMember(chatId, currentUser.id);
+    return { success: true };
+  },
+  removeMember: async (chatId: number, userId: number) => {
+    mockGroupStore.removeMember(chatId, userId);
+    return { success: true };
+  },
+
+  // Messages (разделяем личные и групповые)
+  getMessages: async (chatId: number, limit = 50, offset = 0) => {
+    const group = mockGroupStore.getGroup(chatId);
+    if (group) {
+      const msgs = mockGroupStore.getMessages(chatId);
+      const mapped: Message[] = msgs.map(msg => ({
+        id: msg.id,
+        content: msg.text,
+        userId: msg.senderId,
+        chatId: msg.chatId,
+        createdAt: msg.timestamp,
+        isEdited: false,
+        isDeleted: false,
+      }));
+      return mapped.slice(offset, offset + limit);
+    }
+    return request<Message[]>(`/messages/chat/${chatId}?limit=${limit}&offset=${offset}`);
+  },
+
+  sendMessage: async (chatId: number, content: string) => {
+    const group = mockGroupStore.getGroup(chatId);
+    if (group) {
+      const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
+      const newMessage = {
+        id: Date.now(),
+        text: content,
+        senderId: currentUser.id,
+        chatId,
+        timestamp: new Date(),
+      };
+      mockGroupStore.addMessage(chatId, newMessage);
+      return {
+        id: newMessage.id,
+        content: newMessage.text,
+        userId: newMessage.senderId,
+        chatId: newMessage.chatId,
+        createdAt: newMessage.timestamp,
+        isEdited: false,
+        isDeleted: false,
+      } as Message;
+    }
+    return request<Message>(`/messages/chat/${chatId}`, { method: 'POST', body: JSON.stringify({ content }) });
+  },
+
+  editMessage: (messageId: number, content: string) =>
+    request<Message>(`/messages/${messageId}`, { method: 'PUT', body: JSON.stringify({ content }) }),
+  deleteMessage: (messageId: number) =>
+    request<{ deleted: boolean }>(`/messages/${messageId}`, { method: 'DELETE' }),
+};
