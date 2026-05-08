@@ -24,19 +24,39 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private socketToUser: Map<string, number> = new Map();
   private userToSocket: Map<number, string> = new Map();
-  private userChats: Map<number, Set<number>> = new Map();
+  private heartbeatInterval: NodeJS.Timeout;
 
   constructor(
     private chatsService: ChatsService,
     private messagesService: MessagesService,
   ) {
     logger.info('ChatGateway initialized', { component: 'ChatGateway', event: 'init' });
+    
+    this.heartbeatInterval = setInterval(() => this.checkHeartbeats(), 30000);
+  }
+
+  private checkHeartbeats() {
+    for (const [socketId, userId] of this.socketToUser.entries()) {
+      const socket = this.server.sockets.sockets.get(socketId);
+      if (!socket) {
+        logger.warn('Socket dead - heartbeat missed', {
+          event: 'heartbeat_missed',
+          socket_id: socketId,
+          user_id: userId,
+          timestamp: new Date().toISOString(),
+        });
+        this.socketToUser.delete(socketId);
+        this.userToSocket.delete(userId);
+      }
+    }
   }
 
   handleConnection(client: Socket) {
+    const clientIp = client.handshake.address || client.conn.remoteAddress;
     logger.info('WebSocket connection', {
       event: 'connection',
       socket_id: client.id,
+      client_ip: clientIp,
       timestamp: new Date().toISOString(),
     });
   }
@@ -71,11 +91,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const { userId } = data;
     const startTime = Date.now();
+    const clientIp = client.handshake.address || client.conn.remoteAddress;
     
     logger.info('Auth attempt', {
       event: 'auth_attempt',
       socket_id: client.id,
       user_id: userId,
+      client_ip: clientIp,
       timestamp: new Date().toISOString(),
     });
     
@@ -84,7 +106,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     
     const chats = await this.chatsService.getUserChats(userId);
     const chatIds = chats.map(chat => chat.id);
-    this.userChats.set(userId, new Set(chatIds));
     
     for (const chatId of chatIds) {
       const roomName = `chat_${chatId}`;
@@ -139,31 +160,59 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
     
-    const chat = await this.chatsService.findOne(chatId);
-    if (!chat) {
-      logger.warn('Join chat failed - chat not found', {
+    const isParticipant = await this.chatsService.isParticipant(chatId, userId);
+    if (!isParticipant) {
+      logger.warn('Join chat failed - not a participant', {
         event: 'join_chat_failed',
         user_id: userId,
         chat_id: chatId,
-        reason: 'chat_not_found',
+        reason: 'not_participant',
         timestamp: new Date().toISOString(),
       });
-      client.emit('error', { message: 'Chat not found' });
+      client.emit('error', { message: 'You are not a participant of this chat' });
       return;
     }
     
     const roomName = `chat_${chatId}`;
     client.join(roomName);
     
-    if (!this.userChats.has(userId)) {
-      this.userChats.set(userId, new Set());
-    }
-    this.userChats.get(userId)!.add(chatId);
-    
     client.emit('chat_joined', { chatId });
     
     logger.info('User joined chat', {
       event: 'join_chat',
+      user_id: userId,
+      chat_id: chatId,
+      room: roomName,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  @SubscribeMessage('leave_chat')
+  async handleLeaveChat(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { chatId: number },
+  ) {
+    const { chatId } = data;
+    const userId = this.socketToUser.get(client.id);
+    
+    if (!userId) {
+      logger.warn('Leave chat failed - not authenticated', {
+        event: 'leave_chat_failed',
+        socket_id: client.id,
+        chat_id: chatId,
+        reason: 'not_authenticated',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+    
+    const roomName = `chat_${chatId}`;
+    client.leave(roomName);
+    
+    client.emit('chat_left', { chatId });
+    
+    logger.info('User left chat', {
+      event: 'leave_chat',
       user_id: userId,
       chat_id: chatId,
       room: roomName,
@@ -180,24 +229,43 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const { chatId, content } = data;
     const userId = this.socketToUser.get(client.id);
     
+    console.log('🔥🔥🔥 SEND_MESSAGE CALLED 🔥🔥🔥');
+    console.log('userId:', userId);
+    console.log('chatId:', chatId);
+    console.log('content:', content);
+    
     if (!userId) {
-      logger.warn('Send message failed - not authenticated', {
-        event: 'send_message_failed',
-        socket_id: client.id,
-        chat_id: chatId,
-        reason: 'not_authenticated',
-        timestamp: new Date().toISOString(),
-      });
+      console.log('❌ No userId, aborting');
       client.emit('error', { message: 'Not authenticated' });
+      return;
+    }
+    
+    const isParticipant = await this.chatsService.isParticipant(chatId, userId);
+    console.log('isParticipant:', isParticipant);
+    
+    if (!isParticipant) {
+      console.log('❌ Not a participant, aborting');
+      client.emit('error', { message: 'You are not a participant of this chat' });
       return;
     }
     
     try {
       const message = await this.messagesService.sendMessage(chatId, userId, content);
+      console.log('✅ Message saved, id:', message.id);
+      
+      await this.messagesService.markAsDelivered(message.id, userId);
+      console.log('✅ Marked as delivered for sender');
       
       const dbSaveTime = Date.now() - startTime;
       
+      const room = this.server.sockets.adapter.rooms.get(`chat_${chatId}`);
+      const roomSize = room ? room.size : 0;
+      console.log(`📊 Room chat_${chatId} has ${roomSize} sockets`);
+      console.log(`📤 Broadcasting message ${message.id} to room chat_${chatId}`);
+      
       this.server.to(`chat_${chatId}`).emit('new_message', message);
+      
+      console.log(`✅ Broadcast complete`);
       
       const totalTime = Date.now() - startTime;
       
@@ -213,6 +281,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
+      console.error('❌ Error in send_message:', error.message);
       logger.error('Send message error', {
         event: 'send_message_error',
         user_id: userId,
@@ -233,13 +302,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = this.socketToUser.get(client.id);
     
     if (!userId) {
-      logger.warn('Edit message failed - not authenticated', {
-        event: 'edit_message_failed',
-        socket_id: client.id,
-        message_id: messageId,
-        reason: 'not_authenticated',
-        timestamp: new Date().toISOString(),
-      });
       client.emit('error', { message: 'Not authenticated' });
       return;
     }
@@ -282,20 +344,29 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = this.socketToUser.get(client.id);
     
     if (!userId) {
-      logger.warn('Delete message failed - not authenticated', {
-        event: 'delete_message_failed',
-        socket_id: client.id,
-        message_id: messageId,
-        reason: 'not_authenticated',
-        timestamp: new Date().toISOString(),
-      });
       client.emit('error', { message: 'Not authenticated' });
       return;
     }
     
     try {
       const message = await this.messagesService.getMessage(messageId);
-      await this.messagesService.deleteMessage(messageId, userId);
+      
+      const isParticipant = await this.chatsService.isParticipant(message.chatId, userId);
+      if (!isParticipant) {
+        client.emit('error', { message: 'You are not a participant of this chat' });
+        return;
+      }
+      
+      const role = await this.chatsService.getUserRole(message.chatId, userId);
+      const isAuthor = message.userId === userId;
+      const canDeleteAny = role === 'owner' || role === 'admin';
+      
+      if (!isAuthor && !canDeleteAny) {
+        client.emit('error', { message: 'You do not have permission to delete this message' });
+        return;
+      }
+      
+      await this.messagesService.deleteMessage(messageId, userId, role || undefined);
       
       this.server.to(`chat_${message.chatId}`).emit('message_deleted', {
         id: messageId,
@@ -307,12 +378,113 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         message_id: messageId,
         user_id: userId,
         chat_id: message.chatId,
+        role: role || 'none',
+        is_author: isAuthor,
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
       logger.error('Delete message error', {
         event: 'delete_message_error',
         user_id: userId,
+        message_id: messageId,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+      client.emit('error', { message: error.message });
+    }
+  }
+
+  @SubscribeMessage('message_delivered')
+  async handleMessageDelivered(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { messageId: number },
+  ) {
+    const { messageId } = data;
+    const userId = this.socketToUser.get(client.id);
+    
+    if (!userId) {
+      client.emit('error', { message: 'Not authenticated' });
+      return;
+    }
+    
+    try {
+      const message = await this.messagesService.getMessage(messageId);
+      
+      const isParticipant = await this.chatsService.isParticipant(message.chatId, userId);
+      if (!isParticipant) {
+        client.emit('error', { message: 'You are not a participant of this chat' });
+        return;
+      }
+      
+      await this.messagesService.markAsDelivered(messageId, userId);
+      
+      const senderSocketId = this.userToSocket.get(message.userId);
+      if (senderSocketId) {
+        this.server.to(senderSocketId).emit('message_status_update', {
+          messageId,
+          status: 'delivered',
+        });
+      }
+      
+      logger.debug('Message marked as delivered', {
+        event: 'message_delivered',
+        message_id: messageId,
+        user_id: userId,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Message delivered error', {
+        event: 'message_delivered_error',
+        message_id: messageId,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+      client.emit('error', { message: error.message });
+    }
+  }
+
+  @SubscribeMessage('message_read')
+  async handleMessageRead(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { messageId: number },
+  ) {
+    const { messageId } = data;
+    const userId = this.socketToUser.get(client.id);
+    
+    if (!userId) {
+      client.emit('error', { message: 'Not authenticated' });
+      return;
+    }
+    
+    try {
+      const message = await this.messagesService.getMessage(messageId);
+      
+      const isParticipant = await this.chatsService.isParticipant(message.chatId, userId);
+      if (!isParticipant) {
+        client.emit('error', { message: 'You are not a participant of this chat' });
+        return;
+      }
+      
+      await this.messagesService.markAsRead(messageId, userId);
+      
+      const senderSocketId = this.userToSocket.get(message.userId);
+      if (senderSocketId) {
+        this.server.to(senderSocketId).emit('message_status_update', {
+          messageId,
+          status: 'read',
+          readAt: new Date().toISOString(),
+        });
+      }
+      
+      logger.debug('Message marked as read', {
+        event: 'message_read',
+        message_id: messageId,
+        user_id: userId,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Message read error', {
+        event: 'message_read_error',
         message_id: messageId,
         error: error.message,
         timestamp: new Date().toISOString(),
@@ -330,6 +502,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = this.socketToUser.get(client.id);
     
     if (!userId) return;
+    
+    const isParticipant = await this.chatsService.isParticipant(chatId, userId);
+    if (!isParticipant) return;
     
     client.to(`chat_${chatId}`).emit('user_typing', {
       userId,
