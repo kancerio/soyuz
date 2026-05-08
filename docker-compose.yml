@@ -26,12 +26,14 @@ services:
   ai-service:
     build:
       context: .
-      dockerfile: docker/Dockerfile.ai
+      dockerfile: docker/Dockerfile   # твой Dockerfile
     container_name: messenger-ai
     ports:
-      - "8000:8000"
-    env_file:
-      - .env
+      - "8001:8000"                    # чтобы не конфликтовать с другими, используй 8001
+    environment:
+      - AI_MOCK_MODE=true
+    volumes:
+      - ./models:/root/.cache/huggingface
     networks:
       - messenger-network
     depends_on:
