@@ -15,50 +15,45 @@ export class AuthService {
 
   // Регистрация нового пользователя
   async register(registerDto: RegisterDto) {
-    // Проверяем, существует ли пользователь с таким email
-    const existingUser = await this.usersService.findByEmail(registerDto.email);
-    if (existingUser) {
-      throw new ConflictException('Пользователь с таким email уже существует');
-    }
-
-    // Проверяем, существует ли пользователь с таким username
-    const existingUsername = await this.usersService.findByUsername(registerDto.username);
-    if (existingUsername) {
-      throw new ConflictException('Пользователь с таким именем уже существует');
-    }
-
-    // Хешируем пароль
-    const hashedPassword = await bcrypt.hash(registerDto.password, 10);
-
-    // Создаём пользователя
-    const user = await this.usersService.create({
-      email: registerDto.email,
-      username: registerDto.username,
-      password: hashedPassword,
-    });
-
-    // Проверяем, что пользователь создался и у него есть id
-    if (!user || !user.id) {
-      throw new Error('Не удалось создать пользователя');
-    }
-
-    // Генерируем токены
-    const tokens = await this.generateTokens(user.id, user.email);
-
-    // Сохраняем refresh token в БД
-    await this.usersService.saveRefreshToken(user.id, tokens.refreshToken);
-
-    return {
-      message: 'Регистрация успешна',
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        language: user.language,
-      },
-      ...tokens,
-    };
+  // Проверяем существующего пользователя
+  const existingUser = await this.usersService.findByEmail(registerDto.email);
+  if (existingUser) {
+    throw new ConflictException('Пользователь с таким email уже существует');
   }
+
+  const existingUsername = await this.usersService.findByUsername(registerDto.username);
+  if (existingUsername) {
+    throw new ConflictException('Пользователь с таким именем уже существует');
+  }
+
+  // Хешируем пароль
+  const hashedPassword = await bcrypt.hash(registerDto.password, 10);
+
+  // Создаём пользователя с языком
+  const user = await this.usersService.create({
+    email: registerDto.email,
+    username: registerDto.username,
+    password: hashedPassword,
+    preferred_language: registerDto.preferred_language || 'en', // если не указан — 'en'
+  });
+
+  // Генерируем токены
+  const tokens = await this.generateTokens(user.id, user.email);
+
+  // Сохраняем refresh token
+  await this.usersService.saveRefreshToken(user.id, tokens.refreshToken);
+
+  return {
+    message: 'Регистрация успешна',
+    user: {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      language: user.preferred_language,
+    },
+    ...tokens,
+  };
+}
 
   // Логин
   async login(loginDto: LoginDto) {
@@ -91,7 +86,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         username: user.username,
-        language: user.language,
+        language: user.preferred_language,
       },
       ...tokens,
     };
