@@ -33,7 +33,7 @@ services:
     environment:
       - AI_MOCK_MODE=true
     volumes:
-      - ./models:/root/.cache/huggingface
+      - ./app_ai:/app/app_ai   # для горячей перезагрузки (опционально)
     networks:
       - messenger-network
     depends_on:

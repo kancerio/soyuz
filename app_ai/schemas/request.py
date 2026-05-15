@@ -5,3 +5,4 @@ class TranslateRequest(BaseModel):
     text: str
     target_lang: str
     source_lang: Optional[str] = None
+    correlation_id: Optional[str] = None
