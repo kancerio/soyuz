@@ -1,79 +1,84 @@
-import requests
-import json
-import time
+import os
+import sys
+from typing import Any
 
-BASE_URL = "http://localhost:8001"  # твой порт
-ENDPOINT = f"{BASE_URL}/api/v1/translate"
+import httpx
 
-def test_case(name, payload, expected_status, expected_contains=None, correlation_id_check=False):
-    print(f"\n▶️  {name}")
-    try:
-        resp = requests.post(ENDPOINT, json=payload, timeout=5)
-        status = resp.status_code
-        ok = (status == expected_status)
-        if ok and expected_contains:
-            if isinstance(expected_contains, str):
-                ok = expected_contains in resp.text
-            elif isinstance(expected_contains, dict):
-                for k, v in expected_contains.items():
-                    if resp.json().get(k) != v:
-                        ok = False
-                        break
-        if correlation_id_check and ok:
-            corr_id = resp.json().get("correlation_id")
-            if corr_id != payload.get("correlation_id"):
-                ok = False
-                print(f"   correlation_id mismatch: expected {payload.get('correlation_id')}, got {corr_id}")
-        print(f"   Status: {status} (expected {expected_status}) – {'✅' if ok else '❌'}")
-        if not ok:
-            print(f"   Response: {resp.text[:200]}")
-        return ok
-    except Exception as e:
-        print(f"   ❌ Error: {e}")
-        return False
+BASE_URL = os.getenv("AI_BASE_URL", "http://localhost:8001").rstrip("/")
 
-def main():
-    print("=== Запуск тест-кейсов перевода ===\n")
-    results = []
 
-    # TC1
-    results.append(test_case("TC1: Короткий текст", {"text": "Hello", "target_lang": "ru"}, 200, "[mock_ru]"))
+def request_case(
+    client: httpx.Client,
+    *,
+    name: str,
+    path: str,
+    payload: dict[str, Any],
+    expected_status: int,
+    expected_action: str | None = None,
+) -> bool:
+    response = client.post(path, json=payload)
+    body = response.json()
+    passed = response.status_code == expected_status
+    if expected_action is not None:
+        passed = passed and body.get("action") == expected_action
+        passed = passed and body.get("mock") is True
+    if expected_status == 422:
+        passed = passed and body.get("error", {}).get("code") == "validation_error"
 
-    # TC2: длинный текст (1000+ символов)
-    long_text = "Lorem ipsum " * 100
-    results.append(test_case("TC2: Длинный текст", {"text": long_text, "target_lang": "ru"}, 200, "[mock_ru]"))
+    state = "PASS" if passed else "FAIL"
+    print(f"{state}: {name} (HTTP {response.status_code})")
+    if not passed:
+        print(body)
+    return passed
 
-    # TC3: пустой текст
-    results.append(test_case("TC3: Пустой текст", {"text": "", "target_lang": "ru"}, 400, "Text cannot be empty"))
 
-    # TC4: неизвестный язык
-    results.append(test_case("TC4: Неизвестный язык", {"text": "Hello", "target_lang": "xyz"}, 400, "Unsupported target language"))
+def main() -> int:
+    cases = []
+    with httpx.Client(base_url=BASE_URL, timeout=5) as client:
+        cases.append(
+            request_case(
+                client,
+                name="translate success",
+                path="/translate",
+                payload={"text": "Hello", "source_lang": "en", "target_lang": "ru"},
+                expected_status=200,
+                expected_action="translate",
+            )
+        )
+        cases.append(
+            request_case(
+                client,
+                name="translate rejects empty text",
+                path="/translate",
+                payload={"text": " ", "target_lang": "ru"},
+                expected_status=422,
+            )
+        )
+        for action in ("shorten", "formal", "friendly"):
+            cases.append(
+                request_case(
+                    client,
+                    name=f"assist {action}",
+                    path="/assist",
+                    payload={"text": "Send the report", "action": action},
+                    expected_status=200,
+                    expected_action=action,
+                )
+            )
+        cases.append(
+            request_case(
+                client,
+                name="assist rejects unknown action",
+                path="/assist",
+                payload={"text": "Hello", "action": "suggest"},
+                expected_status=422,
+            )
+        )
 
-    # TC5: ошибка AI-сервиса – имитируем, отправив запрос на несуществующий порт (отключать контейнер не будем)
-    # Но можно попросить пользователя запустить отдельно. Для автоматизации пропустим с предупреждением.
-    print("\n⚠️  TC5 (ошибка AI) пропущен – требует ручного отключения контейнера.")
+    passed = sum(cases)
+    print(f"Passed: {passed}/{len(cases)}")
+    return 0 if passed == len(cases) else 1
 
-    # TC6: несколько языковых пар
-    for lang in ["de", "fr", "es"]:
-        results.append(test_case(f"TC6: Языковая пара {lang}", {"text": "Hello", "target_lang": lang}, 200, f"[mock_{lang}]"))
-
-    # TC7: с correlation_id
-    corr_id = "auto-test-123"
-    results.append(test_case("TC7: Передача correlation_id", 
-        {"text": "Hi", "target_lang": "ru", "correlation_id": corr_id}, 200, 
-        correlation_id_check=True))
-
-    # TC8: автоопределение source_lang (не передаём) – ожидаем 200, не важно значение source_lang_detected
-    results.append(test_case("TC8: Автоопределение source_lang", {"text": "Bonjour", "target_lang": "ru"}, 200, None))
-
-    print("\n=== РЕЗУЛЬТАТ ===")
-    total = len(results)
-    passed = sum(results)
-    print(f"Пройдено: {passed} из {total}")
-    if passed == total:
-        print("✅ Все тесты успешно выполнены")
-    else:
-        print(f"❌ Не пройдено {total - passed} тестов")
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

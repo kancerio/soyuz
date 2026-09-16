@@ -1,22 +1,27 @@
-# Тест-кейсы для AI перевода (endpoint /translate)
+# Тест-кейсы `/translate` и `/assist`
 
-## Предусловия
-- AI-сервис запущен (mock-режим, но можно и реальный).
-- Эндпоинт доступен: `POST /api/v1/translate`
-- Адрес: `http://localhost:8000/api/v1/translate/` (порт может отличаться)
+Предусловие: AI-сервис запущен с `AI_MOCK_MODE=true`. Для полного Compose
+используется `http://localhost:8001`, для `docker-compose.ai-only.yml` —
+`http://localhost:8000`.
 
-## Тест-кейсы
+| ID | Проверка | Ожидаемый результат |
+| --- | --- | --- |
+| TC1 | `/translate`: `en` → `ru` | HTTP 200, `action=translate`, `mock=true` |
+| TC2 | `/translate` без `source_lang` | HTTP 200, `source_lang=auto` |
+| TC3 | `/translate` с пустым `text` | HTTP 422, `validation_error`, поле `text` |
+| TC4 | `/translate` с текстом длиннее 5000 символов | HTTP 422, поле `text` |
+| TC5 | `/translate` с неизвестным `target_lang` | HTTP 422, поле `target_lang` |
+| TC6 | `/assist` с `shorten`, `formal`, `friendly` | HTTP 200 для каждого действия |
+| TC7 | `/assist` с пустым или слишком длинным `text` | HTTP 422, поле `text` |
+| TC8 | `/assist` с неизвестным действием | HTTP 422, поле `action` |
+| TC9 | Любой endpoint с `X-Correlation-ID` | Значение повторяется в JSON и заголовке ответа |
+| TC10 | `AI_MOCK_MODE=false` без провайдера | HTTP 503, `ai_provider_unavailable` |
 
-| ID   | Название                     | Входные данные                                                                                 | Ожидаемый результат                                                                                 | Статус |
-|------|------------------------------|------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|--------|
-| TC1  | Короткий текст               | `{"text": "Hello", "target_lang": "ru"}`                                                        | `200 OK`, `translated_text` начинается с `[mock_ru]`, `correlation_id` не пуст                       | ✅     |
-| TC2  | Длинный текст (1000+ симв)   | `{"text": "Lorem ipsum... (1000 символов)", "target_lang": "ru"}`                               | `200 OK`, ответ получен, нет ошибки                                                                   |        |
-| TC3  | Пустой текст                 | `{"text": "", "target_lang": "ru"}`                                                             | `400 Bad Request`, `detail`: "Text cannot be empty"                                                   |        |
-| TC4  | Неизвестный целевой язык     | `{"text": "Hello", "target_lang": "xyz"}`                                                        | `400 Bad Request`, `detail`: "Unsupported target language: xyz. Supported: ru, en, de, fr, es, zh, ar" |        |
-| TC5  | Ошибка AI-сервиса            | Имитация (например, отключить AI-контейнер или передать некорректные параметры)                 | `500 Internal Server Error` или таймаут                                                               |        |
-| TC6  | Несколько языковых пар       | `target_lang="de"`, затем `"fr"`, `"es"`                                                         | Для каждого – `200 OK`, перевод содержит соответствующий тег `[mock_de]`, `[mock_fr]` и т.д.        |        |
-| TC7  | Передача `correlation_id`    | `{"text": "Hi", "target_lang": "ru", "correlation_id": "my-id-123"}`                             | `200 OK`, в ответе `correlation_id` = `"my-id-123"`, в логах виден этот id                           |        |
-| TC8  | Автоопределение `source_lang`| `source_lang` не передан, текст на французском "Bonjour"                                         | `200 OK`, `source_lang_detected` = `"en"` (заглушка, но не ошибка)                                    |        |
+Автоматические тесты находятся в `ai-service/tests/test_translate.py` и
+`ai-service/tests/test_assist.py`. Ручной HTTP-smoke запускается после старта
+сервиса:
 
-## Результаты
-(заполнить после выполнения)
+```powershell
+$env:AI_BASE_URL = "http://localhost:8001"
+python test_translation_api.py
+```

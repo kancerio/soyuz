@@ -1,20 +1,17 @@
-```markdown
 # AI Service for Messenger
 
 Сервис предоставляет AI-функции: перевод, распознавание речи, ИИ-помощник, анализ документов и секретарь.
 
 ## Запуск через Docker Compose (рекомендуется)
 
-1. Скопируйте `.env.example` в `.env` и при необходимости заполните:
+1. Из корня проекта выполните:
    ```bash
-   cp .env.example .env
+   docker compose -f docker-compose.ai-only.yml up --build
    ```
-2. Из корня проекта выполните:
-   ```bash
-   docker-compose up --build
-   ```
-3. Сервис будет доступен на `http://localhost:8000`
-4. Документация API (Swagger): `http://localhost:8000/docs`
+2. Сервис будет доступен на `http://localhost:8000`.
+3. Документация API (Swagger): `http://localhost:8000/docs`.
+
+Compose включает `AI_MOCK_MODE=true`. Mock не требует моделей и внешних API.
 
 ## Локальный запуск (без Docker)
 
@@ -31,9 +28,9 @@
    ```bash
    pip install -r requirements.txt
    ```
-4. Скопируйте `.env.example` в `.env` и настройте.
-5. Запустите сервер:
-   ```bash
+4. Включите mock-режим и запустите сервер в PowerShell:
+   ```powershell
+   $env:AI_MOCK_MODE = "true"
    uvicorn src.main:app --reload --port 8000
    ```
 
@@ -47,8 +44,10 @@ pytest tests -v
 ## Структура проекта
 
 - `src/main.py` – основной файл приложения FastAPI
-- `src/config.py` – загрузка переменных окружения
 - `tests/` – модульные тесты
 - `requirements.txt` – зависимости
-```
+
+Контракты `/translate` и `/assist`, ошибки и ограничения качества описаны в
+`../docs/api-contracts.md`. Поддерживаемые языки перечислены в
+`../docs/language_codes.md`.
 

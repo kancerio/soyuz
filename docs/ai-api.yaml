@@ -1,1 +1,577 @@
-{"openapi":"3.1.0","info":"{"title":"AI Service for Messenger","version":"0.1.0"},"paths":"{"/":"{"get":"summary":"Root","operationId":"root__get","responses":"{"200":"description":"Successful Response","content":"{"application/json":"schema":{"}}}}}}}","/translate":"post":"{"summary":"Translate","operationId":"translate_translate_post","requestBody":"content":"application/json":"schema":"$ref":"#/components/schemas/TranslateRequest"}}}","required":true},"responses":"200":"description":"Successful Ответ","content":{"application/json":{"schema":{"$ref":"#/comComponents/schemas/TranslateResponse"}}}},"422":{"description":"Ошибка проверки","content":{"application/json":{"schema":{"$ref":"#/comComponents/schemas/HTTPValidationError"}}}}}}},"/stt":{"post":{"summary":"Преобразование речи в текст","operationId":"speech_to_text_stt_post","requestBody":{"content":{"multipart/form-data":{"schema":{"$ref":" #/comComponents/schemas/Body_speech_to_text_stt_post"}}},"required":true},"responses":{"200":{"description":"Успешно" Ответ","content":{"application/json":{"schema":{}}}},"422":{"description":"Ошибка проверки","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/assist":{"post":{"summary":"Assist","operationId":"assist_assist_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/AssistRequest"}}},"required":true},"responses":{"200":{"description":"У успешно" Ответ","content":{"application/json":{"schema":{"$ref":"#/components/schemas/AssistResponse"}}}},"422":{"description":"Ошибка проверки","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/secretary":{"post":{"summary":"Секретарь","operationId":"secretary_secretary_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SecretaryRequest"}}},"required":true},"responses":{"200":{"description":"Успеховый ответ","content":{"application/json":{"schema":{"$ref":"#/components/schemas/SecretaryResponse"}}}},"422":{"description":"Ошибка проверки","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/document-analysis":{"post":{"summary":"Документ Анализ","operationId":"document_analysis_document_analysis_post","requestBody":{"content":{"multipart/form-data":{"schema":{"$ref":"#/components/schemas/Body_document_analysis_document_analysis_post"}}}","required":true},"responses":{"200":{"description":"Успеный ответ","content":{"application/json":{"schema":{}}}},"422":{"description":"Проверка Ошибка","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}}},"components":{"schemas":{"AssistRequest":{"properties":{"prompt":{"type":"string","title":"Prompt"},"context":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Context"},"action":{"type":"string","title":"Action"}},"type":"object","required":["prompt","action"],"title":"A ssistRequest"},"AssistResponse":{"properties":{"result":{"type":"string","title":"Result"}},"type":"object","required":["result"],"title":"AssistResponse"},"Body_document_analysis_document_analysis_post":{"properties":{"file":{"type":"string","contentMediaType":"application/octet-stream","title":"File"},"extract_fields":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Extract Fields"}},"type":"object","required":["file"],"title":"Body_document_analysis_document_analysis_post"},"Body_speech_to_text_stt_post":{"properties":{"audio":{"type":"string","contentMediaType":"application/octet-stream","title":"Аудио"},"язык":{"тип":"строка","название":"Язык","по По умолчанию":"ru"}},"тип":"объект","требуемый":["аудио"],"название":"Body_speech_to_text_stt_post"},"HTTPValidationError":{"свойства":{"подробности":{"детали":{"элементы":{"$ref":"#/comComponents/schemas/ValidationErr or"},"тип":"массив","название":"детали"}},"тип":"объект","название":"HTTPValidationError"},"SecretaryRequest":{"свойства":{"действие":{"тип":"строка","название":"Действие"},"детали":{"тип":"строка","название":"Де tails"}},"type":"object","required":["action","details"],"title":"SecretaryRequest"},"SecretaryResponse":{"properties":{"message":{"type":"string","title":"Message"},"data":{"anyOf":[{"additionalProperties":true,"type":"object"},{"type":"null"}],"title":"Data"}},"type":"object","required":["message"],"title":"SecretaryResponse"},"TranslateRequest":{"properties":{"text":{"type":"string","title":"Text"},"source_lang":{"type":"string","title":"Source Lang"},"target_lang":{"type":"string","title":"Целевой язык"}},"type":"object","required":["text","source_lang","target_lang"],"title":"TranslateRequest"},"TranslateResponse":{"properties":{"original_text":{"type":"string","title":"Исходный текст"},"translated_text":{"type":"string","title":"Переведенный текст"},"source_lang":{"type":"string","title":"Исходный язык"},"target_lang":{"type":"string","title":"Целевой Lang"}},"type":"object","required":["original_text","translated_text","source_lang","target_lang"],"title":"TranslateResponse"},"ValidationError":{"properties":{"loc":{"items":{"anyOf":[{"type":"string"},{"type":"integer"}]},"type":"массив","title":"Местоположение"},"msg":{"type":"строка","title":"Сообщение"},"type":{"type":"строка","title":"Тип ошибки"},"input":{"title":"Ввод"},"ctx":{"type":"объект","title":"Контекст"}},"type":"объект","required":["loc","msg","type"],"title":"Ошибка проверки"}}}}
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AI Service for Messenger",
+    "version": "0.2.0"
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "Root",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/translate": {
+      "post": {
+        "summary": "Translate",
+        "operationId": "translate_translate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranslateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextOperationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AI provider is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assist": {
+      "post": {
+        "summary": "Assist",
+        "operationId": "assist_assist_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextOperationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AI provider is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stt": {
+      "post": {
+        "summary": "Speech To Text",
+        "operationId": "speech_to_text_stt_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_speech_to_text_stt_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/secretary": {
+      "post": {
+        "summary": "Secretary",
+        "operationId": "secretary_secretary_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretaryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretaryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/document-analysis": {
+      "post": {
+        "summary": "Document Analysis",
+        "operationId": "document_analysis_document_analysis_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_document_analysis_document_analysis_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AssistRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "shorten",
+              "formal",
+              "friendly"
+            ],
+            "title": "Action"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text",
+          "action"
+        ],
+        "title": "AssistRequest"
+      },
+      "Body_document_analysis_document_analysis_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "extract_fields": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extract Fields"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_document_analysis_document_analysis_post"
+      },
+      "Body_speech_to_text_stt_post": {
+        "properties": {
+          "audio": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Audio"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "default": "ru"
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio"
+        ],
+        "title": "Body_speech_to_text_stt_post"
+      },
+      "ErrorContent": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "details": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": "array",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "title": "ErrorContent"
+      },
+      "ErrorDetail": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "message"
+        ],
+        "title": "ErrorDetail"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorContent"
+          },
+          "correlation_id": {
+            "type": "string",
+            "title": "Correlation Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error",
+          "correlation_id"
+        ],
+        "title": "ErrorResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "SecretaryRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "details": {
+            "type": "string",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "details"
+        ],
+        "title": "SecretaryRequest"
+      },
+      "SecretaryResponse": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "SecretaryResponse"
+      },
+      "TextOperationResponse": {
+        "properties": {
+          "input_text": {
+            "type": "string",
+            "title": "Input Text"
+          },
+          "result": {
+            "type": "string",
+            "title": "Result"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "translate",
+              "shorten",
+              "formal",
+              "friendly"
+            ],
+            "title": "Action"
+          },
+          "source_lang": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Lang"
+          },
+          "target_lang": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Lang"
+          },
+          "correlation_id": {
+            "type": "string",
+            "title": "Correlation Id"
+          },
+          "mock": {
+            "type": "boolean",
+            "title": "Mock"
+          }
+        },
+        "type": "object",
+        "required": [
+          "input_text",
+          "result",
+          "action",
+          "correlation_id",
+          "mock"
+        ],
+        "title": "TextOperationResponse",
+        "description": "Stable response contract shared by /translate and /assist."
+      },
+      "TranslateRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "source_lang": {
+            "type": "string",
+            "title": "Source Lang",
+            "default": "auto"
+          },
+          "target_lang": {
+            "type": "string",
+            "title": "Target Lang"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text",
+          "target_lang"
+        ],
+        "title": "TranslateRequest"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

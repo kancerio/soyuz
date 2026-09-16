@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   ai-service:
     build:
@@ -8,4 +6,5 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - ENVIRONMENT=development
+      - AI_MOCK_MODE=true
+      - AI_LOG_LEVEL=info
