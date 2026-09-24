@@ -25,6 +25,12 @@ interface LocalMessage {
   isDeleted?: boolean;
 }
 
+type TranslationState = {
+  status: 'idle' | 'translating' | 'done' | 'error';
+  text?: string;
+  error?: string;
+};
+
 export default function ChatWindow({ chatId }: ChatWindowProps) {
   const router = useRouter();
   const { t } = useLanguage();
@@ -39,6 +45,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
   const [membersMap, setMembersMap] = useState<Map<number, string>>(new Map());
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [membersModalKey, setMembersModalKey] = useState(0);
+  const [translations, setTranslations] = useState<Record<number, TranslationState>>({});
 
   // Загрузка информации о чате
   useEffect(() => {
@@ -268,6 +275,41 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     setMembersModalKey(prev => prev + 1);
   };
 
+  // --- Перевод сообщения ---
+  const handleTranslate = async (msg: LocalMessage) => {
+    if (translations[msg.id]?.status === 'translating') return;
+    if (msg.isDeleted) return;
+
+    setTranslations(prev => ({
+      ...prev,
+      [msg.id]: { status: 'translating' },
+    }));
+
+    try {
+      // TODO (Задача 2): языки брать из профиля отправителя/получателя
+      const res = await apiClient.translateMessage(
+        msg.text,
+        'ru',
+        'en',
+        `msg-${msg.id}`
+      );
+
+      setTranslations(prev => ({
+        ...prev,
+        [msg.id]: { status: 'done', text: res.result },
+      }));
+    } catch (err: any) {
+      // Ошибка AI — оригинал НЕ удаляем, показываем только статус ошибки
+      setTranslations(prev => ({
+        ...prev,
+        [msg.id]: {
+          status: 'error',
+          error: err?.message || 'Ошибка перевода',
+        },
+      }));
+    }
+  };
+
   if (loading) return <div className="p-4">Загрузка сообщений...</div>;
 
   return (
@@ -324,6 +366,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                 )}
                 {msg.isDeleted ? '[Удалено]' : msg.text}
               </p>
+
               <div className="text-xs opacity-70 mt-1 flex justify-end gap-1">
                 <span>{msg.timestamp.toLocaleTimeString()}</span>
                 {msg.senderId === user?.id && (
@@ -331,6 +374,55 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                 )}
                 {msg.isEdited && <span>(ред.)</span>}
               </div>
+
+              {/* --- Перевод --- */}
+              {!msg.isDeleted && (
+                <>
+                  {!translations[msg.id] && (
+                    <button
+                      onClick={() => handleTranslate(msg)}
+                      className={`text-xs mt-1 hover:underline ${
+                        msg.senderId === user?.id ? 'text-blue-100' : 'text-blue-500'
+                      }`}
+                    >
+                      Перевести
+                    </button>
+                  )}
+
+                  {translations[msg.id]?.status === 'translating' && (
+                    <div className="text-xs italic mt-1 opacity-70">
+                      Переводится…
+                    </div>
+                  )}
+
+                  {translations[msg.id]?.status === 'done' && (
+                    <div
+                      className={`text-xs mt-1 border-l-2 pl-2 ${
+                        msg.senderId === user?.id
+                          ? 'border-blue-300 text-blue-50'
+                          : 'border-blue-400 text-gray-600 dark:text-gray-300'
+                      }`}
+                    >
+                      {translations[msg.id].text}
+                      <span className="ml-2 text-[10px] uppercase opacity-60">
+                        (тестовый результат)
+                      </span>
+                    </div>
+                  )}
+
+                  {translations[msg.id]?.status === 'error' && (
+                    <div className="text-xs mt-1 flex items-center gap-2 text-red-300">
+                      <span>{translations[msg.id].error}</span>
+                      <button
+                        onClick={() => handleTranslate(msg)}
+                        className="underline hover:no-underline"
+                      >
+                        Повторить
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         ))}

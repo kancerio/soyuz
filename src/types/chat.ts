@@ -10,6 +10,13 @@ export interface Message {
   status?: 'sent' | 'delivered' | 'read';
   isEdited?: boolean;
   isDeleted?: boolean;
+
+  // --- Поля перевода ---
+  translatedText?: string | null;
+  translationStatus?: 'idle' | 'translating' | 'done' | 'error';
+  translationError?: string | null;
+  sourceLang?: string | null;
+  targetLang?: string | null;
 }
 
 export interface Chat {

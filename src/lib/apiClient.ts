@@ -12,6 +12,16 @@ if (typeof window !== 'undefined') {
   refreshToken = sessionStorage.getItem('refreshToken');
 }
 
+export interface TextOperationResponse {
+  input_text: string;
+  result: string;
+  action: 'translate' | 'shorten' | 'formal' | 'friendly';
+  source_lang: string | null;
+  target_lang: string | null;
+  correlation_id: string;
+  mock: boolean;
+}
+
 export function setTokens(access: string, refresh: string) {
   accessToken = access;
   refreshToken = refresh;
@@ -100,34 +110,29 @@ export const apiClient = {
 
   // Chats (объединяем реальные чаты и группы из хранилища)
   getChats: async () => {
-    // Реальные чаты с бэкенда (личные)
     const realChats = await request<Chat[]>('/chats');
-    
-    // Локальные группы из mockGroupStore
+
     const allGroups = mockGroupStore.getGroups();
     const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
-    
-    // Фильтруем группы: оставляем только те, где текущий пользователь – участник
+
     const userGroups = allGroups.filter(group =>
       group.members.some(member => member.userId === currentUser.id)
     );
-    
+
     const groupChats: Chat[] = userGroups.map(group => ({
       id: group.id,
       title: group.title,
       isGroup: true,
       createdAt: new Date(),
     }));
-    
+
     return [...realChats, ...groupChats];
   },
   getChat: async (id: number) => {
-    // Сначала проверяем, есть ли группа в локальном хранилище
     const group = mockGroupStore.getGroup(id);
     if (group) {
       return { id: group.id, title: group.title, isGroup: true, createdAt: new Date() } as Chat;
     }
-    // Иначе запрашиваем с бэкенда (для личных чатов)
     return request<Chat>(`/chats/${id}`);
   },
   createPrivateChat: (userId: number) =>
@@ -206,4 +211,34 @@ export const apiClient = {
     request<Message>(`/messages/${messageId}`, { method: 'PUT', body: JSON.stringify({ content }) }),
   deleteMessage: (messageId: number) =>
     request<{ deleted: boolean }>(`/messages/${messageId}`, { method: 'DELETE' }),
+
+  // --- AI: перевод (заглушка до появления backend-прокси) ---
+  translateMessage: async (
+    text: string,
+    sourceLang: string,
+    targetLang: string,
+    correlationId?: string
+  ): Promise<TextOperationResponse> => {
+    // TODO: заменить на вызов через NestJS: POST /ai/translate
+    // Сейчас — эмуляция AI-сервиса v0.2 (mock)
+    await new Promise(r => setTimeout(r, 800));
+
+    // Эмуляция ошибки 503 для теста: если текст содержит "fail"
+    if (text.toLowerCase().includes('fail')) {
+      const err: any = new Error('AI provider unavailable');
+      err.code = 'ai_provider_unavailable';
+      err.status = 503;
+      throw err;
+    }
+
+    return {
+      input_text: text,
+      result: `[${sourceLang}->${targetLang}] ${text}`,
+      action: 'translate',
+      source_lang: sourceLang,
+      target_lang: targetLang,
+      correlation_id: correlationId || `msg-${Date.now()}`,
+      mock: true,
+    };
+  },
 };
