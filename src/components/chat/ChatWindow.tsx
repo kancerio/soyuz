@@ -9,26 +9,15 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useSocketStatus } from '@/context/SocketContext';
 import AIToolsPanel from './AIToolsPanel';
 import GroupMembersModal from './GroupMembersModal';
+import TranslationBlock from './TranslationBlock';
+import RewritePanel, { RewriteAction, RewriteState } from './RewritePanel';
+import LoadingState from '@/components/ui/LoadingState';
 import { Message } from '@/types/chat';
 
 interface ChatWindowProps {
   chatId: string;
 }
 
-type RewriteAction = 'shorten' | 'formal' | 'friendly';
-
-type RewriteState = {
-  status: 'idle' | 'loading' | 'preview' | 'error';
-  action?: RewriteAction;
-  originalDraft?: string;
-  preview?: string;
-  error?: string;
-};
-
-/**
- * Слияние сообщений по id.
- * Сохраняем локальные поля (status, перевод), если они уже есть.
- */
 function mergeMessages(prev: Message[], incoming: Message[]): Message[] {
   const map = new Map<number, Message>();
   prev.forEach(m => map.set(m.id, m));
@@ -39,13 +28,11 @@ function mergeMessages(prev: Message[], incoming: Message[]): Message[] {
       map.set(m.id, {
         ...existing,
         ...m,
-        // Сохраняем всё, что могло быть получено от AI, если backend не прислал
         translatedText: m.translatedText ?? existing.translatedText,
         translationStatus: m.translationStatus ?? existing.translationStatus,
         translationError: m.translationError ?? existing.translationError,
         sourceLang: m.sourceLang ?? existing.sourceLang,
         targetLang: m.targetLang ?? existing.targetLang,
-        // Локальный статус отправки не перетираем готовым ответом backend
         status: existing.status === 'sending' ? m.status : (m.status ?? existing.status),
       });
     } else {
@@ -197,14 +184,12 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
 
     let fallbackTimer: NodeJS.Timeout;
     const socket = getSocket();
-
     const cleanupFallback = () => fallbackTimer && clearTimeout(fallbackTimer);
 
     const onNewMessageConfirm = (msg: any) => {
       if (msg.userId === user?.id && msg.content === content && msg.chatId === chatIdNum) {
         cleanupFallback();
         socket?.off('new_message', onNewMessageConfirm);
-
         setMessages(prev =>
           prev.map(m =>
             m.id === tempId
@@ -235,7 +220,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       socket?.off('new_message', onNewMessageConfirm);
       try {
         const fresh = await apiClient.getMessages(chatIdNum);
-        // mergeMessages сохранит перевод, статусы и не задублирует
         setMessages(prev => mergeMessages(prev, fresh));
       } catch (err) {
         console.error('Fallback failed:', err);
@@ -290,7 +274,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         targetLanguage,
         `msg-${msg.id}`
       );
-
       setMessages(prev =>
         prev.map(m =>
           m.id === msg.id
@@ -361,7 +344,17 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     setRewrite({ status: 'idle' });
   };
 
-  if (loading) return <div className="p-4">Загрузка сообщений...</div>;
+  const retryRewrite = () => {
+    if (rewrite.action) handleAssist(rewrite.action);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <LoadingState text="Загрузка сообщений…" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -431,140 +424,27 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                 {msg.isEdited && <span>(ред.)</span>}
               </div>
 
-              {!msg.isDeleted && (
-                <>
-                  {(!msg.translationStatus || msg.translationStatus === 'idle') && (
-                    <button
-                      onClick={() => handleTranslate(msg)}
-                      className={`text-xs mt-1 hover:underline ${
-                        msg.senderId === user?.id ? 'text-blue-100' : 'text-blue-500'
-                      }`}
-                    >
-                      Перевести на {targetLanguage.toUpperCase()}
-                    </button>
-                  )}
-
-                  {msg.translationStatus === 'translating' && (
-                    <div className="text-xs italic mt-1 opacity-70">
-                      Переводится на {msg.targetLang?.toUpperCase()}…
-                    </div>
-                  )}
-
-                  {msg.translationStatus === 'done' && (
-                    <div
-                      className={`text-xs mt-1 border-l-2 pl-2 ${
-                        msg.senderId === user?.id
-                          ? 'border-blue-300 text-blue-50'
-                          : 'border-blue-400 text-gray-600 dark:text-gray-300'
-                      }`}
-                    >
-                      <span className="text-[10px] uppercase opacity-60 mr-1">
-                        {msg.targetLang?.toUpperCase()}:
-                      </span>
-                      {msg.translatedText}
-                      <span className="ml-2 text-[10px] uppercase opacity-60">
-                        (тестовый результат)
-                      </span>
-                    </div>
-                  )}
-
-                  {msg.translationStatus === 'error' && (
-                    <div className="text-xs mt-1 flex items-center gap-2 text-red-300">
-                      <span>{msg.translationError}</span>
-                      <button
-                        onClick={() => handleTranslate(msg)}
-                        className="underline hover:no-underline"
-                      >
-                        Повторить
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
+              <TranslationBlock
+                message={msg}
+                targetLanguage={targetLanguage}
+                isOwn={msg.senderId === user?.id}
+                onTranslate={handleTranslate}
+              />
             </div>
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* AI-rewrite */}
-      <div className="px-4 pt-2 border-t dark:border-gray-700">
-        <div className="flex gap-2 mb-2">
-          <button
-            type="button"
-            onClick={() => handleAssist('shorten')}
-            disabled={!newMessage.trim() || rewrite.status === 'loading'}
-            className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
-          >
-            ✂️ Сократить
-          </button>
-          <button
-            type="button"
-            onClick={() => handleAssist('formal')}
-            disabled={!newMessage.trim() || rewrite.status === 'loading'}
-            className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
-          >
-            🎩 Формально
-          </button>
-          <button
-            type="button"
-            onClick={() => handleAssist('friendly')}
-            disabled={!newMessage.trim() || rewrite.status === 'loading'}
-            className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
-          >
-            😊 Дружелюбно
-          </button>
-        </div>
-
-        {rewrite.status === 'loading' && (
-          <div className="text-xs text-gray-500 italic mb-2">Обработка текста…</div>
-        )}
-
-        {rewrite.status === 'preview' && (
-          <div className="mb-2 p-2 rounded border border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700">
-            <div className="text-xs text-gray-500 mb-1">Предпросмотр:</div>
-            <div className="text-sm text-gray-800 dark:text-gray-100 whitespace-pre-wrap">
-              {rewrite.preview}
-            </div>
-            <div className="flex gap-2 mt-2">
-              <button
-                type="button"
-                onClick={applyRewrite}
-                className="text-xs px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
-              >
-                Вставить
-              </button>
-              <button
-                type="button"
-                onClick={cancelRewrite}
-                className="text-xs px-3 py-1 rounded bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500"
-              >
-                Отмена
-              </button>
-            </div>
-          </div>
-        )}
-
-        {rewrite.status === 'error' && (
-          <div className="mb-2 p-2 rounded border border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-700 text-xs text-red-700 dark:text-red-300 flex items-center gap-2">
-            <span>Ошибка AI: {rewrite.error}</span>
-            <button
-              type="button"
-              onClick={() => rewrite.action && handleAssist(rewrite.action)}
-              className="underline hover:no-underline"
-            >
-              Повторить
-            </button>
-            <button
-              type="button"
-              onClick={cancelRewrite}
-              className="underline hover:no-underline"
-            >
-              Отмена
-            </button>
-          </div>
-        )}
-      </div>
+      {/* AI-rewrite панель */}
+      <RewritePanel
+        draft={newMessage}
+        state={rewrite}
+        onAction={handleAssist}
+        onApply={applyRewrite}
+        onCancel={cancelRewrite}
+        onRetry={retryRewrite}
+      />
 
       {/* Форма отправки */}
       <form onSubmit={handleSend} className="p-4">
