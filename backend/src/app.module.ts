@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { ChatsModule } from './chats/chats.module'; // ← добавить
 import { MessagesModule } from './messages/messages.module'; // ← добавить
 import { RedisModule } from './redis/redis.module';
+import { TranslationModule } from './translation/translation.module';
 
 @Module({
   imports: [
@@ -22,7 +23,7 @@ import { RedisModule } from './redis/redis.module';
         password: configService.get('DB_PASSWORD'),
         database: configService.get('DB_DATABASE'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: true, // оставляем false, таблицы создаём вручную
+        synchronize: true, 
         logging: true,
       }),
       inject: [ConfigService],
@@ -32,6 +33,7 @@ import { RedisModule } from './redis/redis.module';
     ChatsModule, // ← добавить
     MessagesModule, // ← добавить
     RedisModule,
+    TranslationModule,
   ],
 })
 export class AppModule {}

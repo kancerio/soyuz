@@ -2,6 +2,8 @@ import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, ManyToOne, Jo
 import { User } from '../users/user.entity';
 import { Chat } from '../chats/chat.entity';
 
+export type TranslateStatus = 'pending' | 'completed' | 'failed' | 'skipped';
+
 @Entity('messages')
 export class Message {
   @PrimaryGeneratedColumn()
@@ -33,7 +35,7 @@ export class Message {
   @Column({ type: 'boolean', default: false })
   isDeleted: boolean;
 
-  // ========== НОВЫЕ ПОЛЯ ==========
+  // ========== СТАТУСЫ ДОСТАВКИ ==========
   @Column({ type: 'boolean', default: false })
   isDelivered: boolean;
 
@@ -42,7 +44,24 @@ export class Message {
 
   @Column({ type: 'timestamp', nullable: true })
   readAt: Date;
-  // ================================
+  // ======================================
+
+  // ========== НОВЫЕ ПОЛЯ ДЛЯ ПЕРЕВОДА ==========
+  @Column({ type: 'text', nullable: true })
+  originalText: string;
+
+  @Column({ type: 'varchar', length: 2, nullable: true })
+  sourceLang: string;
+
+  @Column({ type: 'text', nullable: true })
+  translatedText: string;
+
+  @Column({ type: 'varchar', length: 2, nullable: true })
+  targetLang: string;
+
+  @Column({ type: 'varchar', length: 20, default: 'pending' })
+  translateStatus: TranslateStatus;
+  // ==============================================
 
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;
