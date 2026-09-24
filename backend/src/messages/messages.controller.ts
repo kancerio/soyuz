@@ -2,6 +2,7 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Requ
 import { AuthGuard } from '@nestjs/passport';
 import { MessagesService } from './messages.service';
 import { ChatsService } from '../chats/chats.service';
+import { AssistDto } from './dto/assist.dto';
 
 @Controller('messages')
 @UseGuards(AuthGuard('jwt'))
@@ -40,12 +41,9 @@ export class MessagesController {
   }
 
   @Post('assist')
-  async assist(
-    @Request() req,
-    @Body() body: { text: string; action: 'shorten' | 'formal' | 'friendly' },
-  ) {
-    return this.messagesService.assist(body.text, body.action);
-  }
+async assist(@Body() body: AssistDto) {
+  return this.messagesService.assist(body.text, body.action);
+}
 
   @Put(':messageId')
   async editMessage(
