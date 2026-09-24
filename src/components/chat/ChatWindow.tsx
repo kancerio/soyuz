@@ -29,6 +29,8 @@ type TranslationState = {
   status: 'idle' | 'translating' | 'done' | 'error';
   text?: string;
   error?: string;
+  sourceLang?: string;
+  targetLang?: string;
 };
 
 export default function ChatWindow({ chatId }: ChatWindowProps) {
@@ -46,6 +48,9 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [membersModalKey, setMembersModalKey] = useState(0);
   const [translations, setTranslations] = useState<Record<number, TranslationState>>({});
+
+  // 🎯 Язык перевода берём из профиля пользователя (настройки пользователя)
+  const targetLanguage = (user?.language || 'en').toLowerCase();
 
   // Загрузка информации о чате
   useEffect(() => {
@@ -275,36 +280,42 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     setMembersModalKey(prev => prev + 1);
   };
 
-  // --- Перевод сообщения ---
+  // --- Перевод сообщения (target-язык из профиля пользователя) ---
   const handleTranslate = async (msg: LocalMessage) => {
     if (translations[msg.id]?.status === 'translating') return;
     if (msg.isDeleted) return;
 
     setTranslations(prev => ({
       ...prev,
-      [msg.id]: { status: 'translating' },
+      [msg.id]: { status: 'translating', targetLang: targetLanguage },
     }));
 
     try {
-      // TODO (Задача 2): языки брать из профиля отправителя/получателя
+      // source = auto (сервис определит), target = язык из профиля
       const res = await apiClient.translateMessage(
         msg.text,
-        'ru',
-        'en',
+        'auto',
+        targetLanguage,
         `msg-${msg.id}`
       );
 
       setTranslations(prev => ({
         ...prev,
-        [msg.id]: { status: 'done', text: res.result },
+        [msg.id]: {
+          status: 'done',
+          text: res.result,
+          sourceLang: res.source_lang || 'auto',
+          targetLang: res.target_lang || targetLanguage,
+        },
       }));
     } catch (err: any) {
-      // Ошибка AI — оригинал НЕ удаляем, показываем только статус ошибки
+      // Ошибка AI — оригинал НЕ удаляем, показываем статус
       setTranslations(prev => ({
         ...prev,
         [msg.id]: {
           status: 'error',
           error: err?.message || 'Ошибка перевода',
+          targetLang: targetLanguage,
         },
       }));
     }
@@ -315,21 +326,32 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
   return (
     <div className="flex flex-col h-full">
       <AIToolsPanel />
-      {/* Верхняя панель с индикатором соединения и кнопкой участников */}
+
+      {/* Верхняя панель: индикатор соединения + язык перевода */}
       <div className="p-2 border-b dark:border-gray-700 flex justify-between items-center">
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></span>
           <span className="text-sm">{isConnected ? 'Online' : 'Offline'}</span>
         </div>
-        {chatInfo?.isGroup && (
-          <button
-            onClick={() => setShowMembersModal(true)}
-            className="text-sm text-blue-600 hover:underline"
+        <div className="flex items-center gap-3">
+          {/* 🎯 Индикатор языка перевода из профиля */}
+          <div
+            className="text-xs text-gray-500 dark:text-gray-400"
+            title="Язык перевода берётся из настроек профиля"
           >
-            Участники ({membersMap.size})
-          </button>
-        )}
+            Перевод → <span className="font-semibold uppercase">{targetLanguage}</span>
+          </div>
+          {chatInfo?.isGroup && (
+            <button
+              onClick={() => setShowMembersModal(true)}
+              className="text-sm text-blue-600 hover:underline"
+            >
+              Участники ({membersMap.size})
+            </button>
+          )}
+        </div>
       </div>
+
       {/* Заголовок группы (кликабельный) */}
       {chatInfo?.isGroup && (
         <div
@@ -384,14 +406,15 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                       className={`text-xs mt-1 hover:underline ${
                         msg.senderId === user?.id ? 'text-blue-100' : 'text-blue-500'
                       }`}
+                      title={`Перевести на ${targetLanguage.toUpperCase()}`}
                     >
-                      Перевести
+                      Перевести на {targetLanguage.toUpperCase()}
                     </button>
                   )}
 
                   {translations[msg.id]?.status === 'translating' && (
                     <div className="text-xs italic mt-1 opacity-70">
-                      Переводится…
+                      Переводится на {translations[msg.id].targetLang?.toUpperCase()}…
                     </div>
                   )}
 
@@ -403,6 +426,9 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                           : 'border-blue-400 text-gray-600 dark:text-gray-300'
                       }`}
                     >
+                      <span className="text-[10px] uppercase opacity-60 mr-1">
+                        {translations[msg.id].targetLang?.toUpperCase()}:
+                      </span>
                       {translations[msg.id].text}
                       <span className="ml-2 text-[10px] uppercase opacity-60">
                         (тестовый результат)
