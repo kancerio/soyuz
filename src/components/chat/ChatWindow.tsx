@@ -33,6 +33,16 @@ type TranslationState = {
   targetLang?: string;
 };
 
+type RewriteAction = 'shorten' | 'formal' | 'friendly';
+
+type RewriteState = {
+  status: 'idle' | 'loading' | 'preview' | 'error';
+  action?: RewriteAction;
+  originalDraft?: string;
+  preview?: string;
+  error?: string;
+};
+
 export default function ChatWindow({ chatId }: ChatWindowProps) {
   const router = useRouter();
   const { t } = useLanguage();
@@ -49,7 +59,10 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
   const [membersModalKey, setMembersModalKey] = useState(0);
   const [translations, setTranslations] = useState<Record<number, TranslationState>>({});
 
-  // 🎯 Язык перевода берём из профиля пользователя (настройки пользователя)
+  // --- AI-rewrite ---
+  const [rewrite, setRewrite] = useState<RewriteState>({ status: 'idle' });
+
+  // 🎯 Язык перевода берём из профиля пользователя
   const targetLanguage = (user?.language || 'en').toLowerCase();
 
   // Загрузка информации о чате
@@ -65,7 +78,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     fetchChatInfo();
   }, [chatIdNum]);
 
-  // Загрузка участников группы (только для групповых чатов)
+  // Загрузка участников группы
   useEffect(() => {
     if (!chatInfo?.isGroup) return;
     const fetchMembers = async () => {
@@ -81,7 +94,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     fetchMembers();
   }, [chatInfo?.isGroup, chatIdNum, membersModalKey]);
 
-  // WebSocket подписка и присоединение к комнате
+  // WebSocket
   useEffect(() => {
     if (!user) return;
     const socket = initSocket(user.id);
@@ -136,7 +149,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     };
   }, [chatIdNum, user]);
 
-  // Загрузка истории сообщений
+  // Загрузка истории
   useEffect(() => {
     const fetchMessages = async () => {
       setLoading(true);
@@ -225,7 +238,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     socket?.on('new_message', onNewMessageConfirm);
 
     fallbackTimer = setTimeout(async () => {
-      console.log('Fallback: reloading messages');
       socket?.off('new_message', onNewMessageConfirm);
       try {
         const fresh = await apiClient.getMessages(chatIdNum);
@@ -280,7 +292,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     setMembersModalKey(prev => prev + 1);
   };
 
-  // --- Перевод сообщения (target-язык из профиля пользователя) ---
+  // --- Перевод сообщения ---
   const handleTranslate = async (msg: LocalMessage) => {
     if (translations[msg.id]?.status === 'translating') return;
     if (msg.isDeleted) return;
@@ -291,7 +303,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     }));
 
     try {
-      // source = auto (сервис определит), target = язык из профиля
       const res = await apiClient.translateMessage(
         msg.text,
         'auto',
@@ -309,7 +320,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         },
       }));
     } catch (err: any) {
-      // Ошибка AI — оригинал НЕ удаляем, показываем статус
       setTranslations(prev => ({
         ...prev,
         [msg.id]: {
@@ -321,24 +331,70 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     }
   };
 
+  // --- AI-rewrite ---
+  const handleAssist = async (action: RewriteAction) => {
+    const draft = newMessage.trim();
+    if (!draft) return;
+
+    // Сохраняем оригинальный черновик
+    setRewrite({
+      status: 'loading',
+      action,
+      originalDraft: draft,
+    });
+
+    try {
+      const res = await apiClient.assistText(
+        draft,
+        action,
+        undefined,
+        `assist-${Date.now()}`
+      );
+      setRewrite({
+        status: 'preview',
+        action,
+        originalDraft: draft,
+        preview: res.result,
+      });
+    } catch (err: any) {
+      setRewrite({
+        status: 'error',
+        action,
+        originalDraft: draft,
+        error: err?.message || 'Ошибка AI',
+      });
+    }
+  };
+
+  const applyRewrite = () => {
+    if (rewrite.preview) {
+      setNewMessage(rewrite.preview);
+    }
+    setRewrite({ status: 'idle' });
+  };
+
+  const cancelRewrite = () => {
+    // Возвращаем исходный черновик
+    if (rewrite.originalDraft !== undefined) {
+      setNewMessage(rewrite.originalDraft);
+    }
+    setRewrite({ status: 'idle' });
+  };
+
   if (loading) return <div className="p-4">Загрузка сообщений...</div>;
 
   return (
     <div className="flex flex-col h-full">
       <AIToolsPanel />
 
-      {/* Верхняя панель: индикатор соединения + язык перевода */}
+      {/* Верхняя панель */}
       <div className="p-2 border-b dark:border-gray-700 flex justify-between items-center">
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></span>
           <span className="text-sm">{isConnected ? 'Online' : 'Offline'}</span>
         </div>
         <div className="flex items-center gap-3">
-          {/* 🎯 Индикатор языка перевода из профиля */}
-          <div
-            className="text-xs text-gray-500 dark:text-gray-400"
-            title="Язык перевода берётся из настроек профиля"
-          >
+          <div className="text-xs text-gray-500 dark:text-gray-400">
             Перевод → <span className="font-semibold uppercase">{targetLanguage}</span>
           </div>
           {chatInfo?.isGroup && (
@@ -352,7 +408,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         </div>
       </div>
 
-      {/* Заголовок группы (кликабельный) */}
+      {/* Заголовок группы */}
       {chatInfo?.isGroup && (
         <div
           onClick={() => setShowMembersModal(true)}
@@ -363,7 +419,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         </div>
       )}
 
-      {/* Список сообщений */}
+      {/* Сообщения */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
           <div className="text-center text-gray-500">Нет сообщений. Напишите первое!</div>
@@ -397,7 +453,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                 {msg.isEdited && <span>(ред.)</span>}
               </div>
 
-              {/* --- Перевод --- */}
               {!msg.isDeleted && (
                 <>
                   {!translations[msg.id] && (
@@ -406,7 +461,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                       className={`text-xs mt-1 hover:underline ${
                         msg.senderId === user?.id ? 'text-blue-100' : 'text-blue-500'
                       }`}
-                      title={`Перевести на ${targetLanguage.toUpperCase()}`}
                     >
                       Перевести на {targetLanguage.toUpperCase()}
                     </button>
@@ -455,8 +509,96 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* --- AI-rewrite панель --- */}
+      <div className="px-4 pt-2 border-t dark:border-gray-700">
+        {/* Кнопки режимов */}
+        <div className="flex gap-2 mb-2">
+          <button
+            type="button"
+            onClick={() => handleAssist('shorten')}
+            disabled={!newMessage.trim() || rewrite.status === 'loading'}
+            className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
+            title="Сократить текст"
+          >
+            ✂️ Сократить
+          </button>
+          <button
+            type="button"
+            onClick={() => handleAssist('formal')}
+            disabled={!newMessage.trim() || rewrite.status === 'loading'}
+            className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
+            title="Сделать формальным"
+          >
+            🎩 Формально
+          </button>
+          <button
+            type="button"
+            onClick={() => handleAssist('friendly')}
+            disabled={!newMessage.trim() || rewrite.status === 'loading'}
+            className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
+            title="Сделать дружелюбным"
+          >
+            😊 Дружелюбно
+          </button>
+        </div>
+
+        {/* Loading */}
+        {rewrite.status === 'loading' && (
+          <div className="text-xs text-gray-500 italic mb-2">
+            Обработка текста…
+          </div>
+        )}
+
+        {/* Preview */}
+        {rewrite.status === 'preview' && (
+          <div className="mb-2 p-2 rounded border border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700">
+            <div className="text-xs text-gray-500 mb-1">Предпросмотр:</div>
+            <div className="text-sm text-gray-800 dark:text-gray-100 whitespace-pre-wrap">
+              {rewrite.preview}
+            </div>
+            <div className="flex gap-2 mt-2">
+              <button
+                type="button"
+                onClick={applyRewrite}
+                className="text-xs px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
+              >
+                Вставить
+              </button>
+              <button
+                type="button"
+                onClick={cancelRewrite}
+                className="text-xs px-3 py-1 rounded bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {rewrite.status === 'error' && (
+          <div className="mb-2 p-2 rounded border border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-700 text-xs text-red-700 dark:text-red-300 flex items-center gap-2">
+            <span>Ошибка AI: {rewrite.error}</span>
+            <button
+              type="button"
+              onClick={() => rewrite.action && handleAssist(rewrite.action)}
+              className="underline hover:no-underline"
+            >
+              Повторить
+            </button>
+            <button
+              type="button"
+              onClick={cancelRewrite}
+              className="underline hover:no-underline"
+            >
+              Отмена
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Форма отправки */}
-      <form onSubmit={handleSend} className="p-4 border-t dark:border-gray-700">
+      <form onSubmit={handleSend} className="p-4">
         <div className="flex gap-2">
           <input
             type="text"
@@ -474,7 +616,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         </div>
       </form>
 
-      {/* Модалка участников группы */}
+      {/* Модалка участников */}
       {chatInfo?.isGroup && (
         <GroupMembersModal
           key={membersModalKey}

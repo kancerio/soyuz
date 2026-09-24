@@ -241,4 +241,58 @@ export const apiClient = {
       mock: true,
     };
   },
+    // --- AI: помощник (shorten / formal / friendly) — заглушка ---
+  assistText: async (
+    text: string,
+    action: 'shorten' | 'formal' | 'friendly',
+    context?: string,
+    correlationId?: string
+  ): Promise<TextOperationResponse> => {
+    // TODO: заменить на POST /ai/assist через NestJS
+    await new Promise(r => setTimeout(r, 700));
+
+    // Валидация (эмуляция 422)
+    if (!text || text.trim().length === 0) {
+      const err: any = new Error('Text must not be empty');
+      err.code = 'validation_error';
+      err.status = 422;
+      err.details = [{ field: 'text', message: 'Text must not be empty' }];
+      throw err;
+    }
+    if (text.length > 5000) {
+      const err: any = new Error('Text is too long');
+      err.code = 'validation_error';
+      err.status = 422;
+      err.details = [{ field: 'text', message: 'Max length is 5000' }];
+      throw err;
+    }
+
+    // Эмуляция 503
+    if (text.toLowerCase().includes('fail')) {
+      const err: any = new Error('AI provider unavailable');
+      err.code = 'ai_provider_unavailable';
+      err.status = 503;
+      throw err;
+    }
+
+    // Mock-поведение (соответствует контракту v0.2)
+    let result = text;
+    if (action === 'shorten') {
+      result = text.length > 160 ? text.slice(0, 157) + '...' : text;
+    } else if (action === 'formal') {
+      result = `[формально] ${text}`;
+    } else if (action === 'friendly') {
+      result = `[дружелюбно] ${text} 😊`;
+    }
+
+    return {
+      input_text: text,
+      result,
+      action,
+      source_lang: null,
+      target_lang: null,
+      correlation_id: correlationId || `assist-${Date.now()}`,
+      mock: true,
+    };
+  },
 };
