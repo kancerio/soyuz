@@ -1,15 +1,17 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
-import { ChatsModule } from './chats/chats.module'; // ← добавить
-import { MessagesModule } from './messages/messages.module'; // ← добавить
+import { ChatsModule } from './chats/chats.module';
+import { MessagesModule } from './messages/messages.module';
 import { RedisModule } from './redis/redis.module';
 import { TranslationModule } from './translation/translation.module';
 
 @Module({
   imports: [
+    EventEmitterModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
     }),
@@ -23,16 +25,16 @@ import { TranslationModule } from './translation/translation.module';
         password: configService.get('DB_PASSWORD'),
         database: configService.get('DB_DATABASE'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: true, 
+        synchronize: true,
         logging: true,
       }),
       inject: [ConfigService],
     }),
+    RedisModule,
     UsersModule,
     AuthModule,
-    ChatsModule, // ← добавить
-    MessagesModule, // ← добавить
-    RedisModule,
+    ChatsModule,
+    MessagesModule,
     TranslationModule,
   ],
 })
