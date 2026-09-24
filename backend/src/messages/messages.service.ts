@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Message } from './message.entity';
 import { UsersService } from '../users/users.service';
-import { TranslationService } from '../translation/translation.service';
+import { TranslationService, AssistResult } from '../translation/translation.service';
 
 @Injectable()
 export class MessagesService {
@@ -115,6 +115,12 @@ export class MessagesService {
     }
   }
 
+  async assist(
+  text: string,
+  action: 'shorten' | 'formal' | 'friendly',
+): Promise<AssistResult> {
+  return this.translationService.assist(text, action);
+}
   async editMessage(messageId: number, userId: number, newContent: string): Promise<Message> {
     const message = await this.getMessage(messageId);
 

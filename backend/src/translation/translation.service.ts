@@ -44,8 +44,8 @@ export class TranslationService {
     sourceLang: string,
     targetLang: string,
   ): Promise<TranslateResult> {
-    // Валидация
     const trimmed = text.trim();
+
     if (!trimmed) {
       return {
         originalText: text,
@@ -103,11 +103,12 @@ export class TranslationService {
   /**
    * AI-rewrite через /assist
    */
-    async assist(
+  async assist(
     text: string,
     action: 'shorten' | 'formal' | 'friendly',
   ): Promise<AssistResult> {
     const trimmed = text.trim();
+
     if (!trimmed || trimmed.length > 5000) {
       return {
         originalText: text,
@@ -119,6 +120,7 @@ export class TranslationService {
     }
 
     const payload = {
+      prompt: trimmed,
       text: trimmed,
       action,
     };
@@ -130,9 +132,23 @@ export class TranslationService {
         }),
       );
 
+      const result = response.data.result || response.data.translated_text;
+
+      // Если AI не поддерживает режим — возвращаем mock-фолбэк
+      if (!result || result === 'Неизвестное действие' || result.trim() === '') {
+        this.logger.warn(`Assist returned unknown action for "${action}"`);
+        return {
+          originalText: text,
+          resultText: this.buildMockResult(trimmed, action),
+          action,
+          status: 'completed',
+          mock: true,
+        };
+      }
+
       return {
         originalText: text,
-        resultText: response.data.translated_text || response.data.result,
+        resultText: result,
         action,
         status: 'completed',
         mock: response.data.mock || false,
@@ -149,6 +165,25 @@ export class TranslationService {
     }
   }
 
+  /**
+   * Mock-фолбэк для режимов, которые AI пока не поддерживает
+   */
+  private buildMockResult(text: string, action: 'shorten' | 'formal' | 'friendly'): string {
+    switch (action) {
+      case 'shorten':
+        return text.length > 160 ? text.slice(0, 157) + '...' : text;
+      case 'formal':
+        return `[Официально] ${text}`;
+      case 'friendly':
+        return `[Дружелюбно] ${text}`;
+      default:
+        return text;
+    }
+  }
+
+  /**
+   * Вызов AI /translate с retry
+   */
   private async callAiWithRetry(
     text: string,
     sourceLang: string,
@@ -171,12 +206,12 @@ export class TranslationService {
         );
 
         return {
-        originalText: text,
-        translatedText: response.data.translated_text || response.data.result,
-        sourceLang: response.data.source_lang || sourceLang,
-        targetLang: response.data.target_lang || targetLang,
-        status: 'completed',
-        mock: response.data.mock || false,
+          originalText: text,
+          translatedText: response.data.translated_text || response.data.result,
+          sourceLang: response.data.source_lang || sourceLang,
+          targetLang: response.data.target_lang || targetLang,
+          status: 'completed',
+          mock: response.data.mock || false,
         };
       } catch (error) {
         lastError = error;

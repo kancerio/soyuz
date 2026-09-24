@@ -8,7 +8,7 @@ import { ChatsService } from '../chats/chats.service';
 export class MessagesController {
   constructor(
     private readonly messagesService: MessagesService,
-    private readonly chatsService: ChatsService,  // ← добавляем
+    private readonly chatsService: ChatsService,
   ) {}
 
   @Get('chat/:chatId')
@@ -25,19 +25,27 @@ export class MessagesController {
   }
 
   @Post('chat/:chatId')
-async sendMessage(
-  @Request() req,
-  @Param('chatId') chatId: string,
-  @Body() body: { content: string; sourceLang?: string; targetLang?: string },
-) {
-  return this.messagesService.sendMessageWithTranslation(
-    +chatId,
-    req.user.userId,
-    body.content,
-    body.sourceLang || 'auto',
-    body.targetLang || 'en',
-  );
-}
+  async sendMessage(
+    @Request() req,
+    @Param('chatId') chatId: string,
+    @Body() body: { content: string; sourceLang?: string; targetLang?: string },
+  ) {
+    return this.messagesService.sendMessageWithTranslation(
+      +chatId,
+      req.user.userId,
+      body.content,
+      body.sourceLang || 'auto',
+      body.targetLang || 'en',
+    );
+  }
+
+  @Post('assist')
+  async assist(
+    @Request() req,
+    @Body() body: { text: string; action: 'shorten' | 'formal' | 'friendly' },
+  ) {
+    return this.messagesService.assist(body.text, body.action);
+  }
 
   @Put(':messageId')
   async editMessage(
