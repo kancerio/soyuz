@@ -25,13 +25,19 @@ export class MessagesController {
   }
 
   @Post('chat/:chatId')
-  async sendMessage(
-    @Request() req,
-    @Param('chatId') chatId: string,
-    @Body() body: { content: string },
-  ) {
-    return this.messagesService.sendMessage(+chatId, req.user.userId, body.content);
-  }
+async sendMessage(
+  @Request() req,
+  @Param('chatId') chatId: string,
+  @Body() body: { content: string; sourceLang?: string; targetLang?: string },
+) {
+  return this.messagesService.sendMessageWithTranslation(
+    +chatId,
+    req.user.userId,
+    body.content,
+    body.sourceLang || 'auto',
+    body.targetLang || 'en',
+  );
+}
 
   @Put(':messageId')
   async editMessage(

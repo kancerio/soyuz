@@ -103,7 +103,7 @@ export class TranslationService {
   /**
    * AI-rewrite через /assist
    */
-  async assist(
+    async assist(
     text: string,
     action: 'shorten' | 'formal' | 'friendly',
   ): Promise<AssistResult> {
@@ -132,7 +132,7 @@ export class TranslationService {
 
       return {
         originalText: text,
-        resultText: response.data.result,
+        resultText: response.data.translated_text || response.data.result,
         action,
         status: 'completed',
         mock: response.data.mock || false,
@@ -149,9 +149,6 @@ export class TranslationService {
     }
   }
 
-  /**
-   * Вызов AI с retry (1 попытка при 503 / timeout)
-   */
   private async callAiWithRetry(
     text: string,
     sourceLang: string,
@@ -174,12 +171,12 @@ export class TranslationService {
         );
 
         return {
-          originalText: text,
-          translatedText: response.data.result,
-          sourceLang: response.data.source_lang || sourceLang,
-          targetLang: response.data.target_lang || targetLang,
-          status: 'completed',
-          mock: response.data.mock || false,
+        originalText: text,
+        translatedText: response.data.translated_text || response.data.result,
+        sourceLang: response.data.source_lang || sourceLang,
+        targetLang: response.data.target_lang || targetLang,
+        status: 'completed',
+        mock: response.data.mock || false,
         };
       } catch (error) {
         lastError = error;

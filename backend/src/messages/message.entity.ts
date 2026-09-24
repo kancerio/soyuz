@@ -50,7 +50,7 @@ export class Message {
   @Column({ type: 'text', nullable: true })
   originalText: string;
 
-  @Column({ type: 'varchar', length: 2, nullable: true })
+  @Column({ type: 'varchar', length: 10, nullable: true })
   sourceLang: string;
 
   @Column({ type: 'text', nullable: true })
