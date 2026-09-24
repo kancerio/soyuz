@@ -1,19 +1,19 @@
+export type TranslationStatus = 'idle' | 'translating' | 'done' | 'error';
+
 export interface Message {
+  // --- Базовые поля (совместимы с backend) ---
   id: number;
-  text?: string;      // для моков/групп
-  content?: string;   // для бэкенда
-  senderId?: number;  // для моков/групп
-  userId?: number;    // для бэкенда
+  text: string;
+  senderId: number;
   chatId: number;
-  timestamp?: Date;
-  createdAt?: Date | string;
-  status?: 'sent' | 'delivered' | 'read';
+  timestamp: Date;
+  status?: 'sending' | 'sent' | 'delivered' | 'read';
   isEdited?: boolean;
   isDeleted?: boolean;
 
-  // --- Поля перевода ---
+  // --- AI: перевод (новые поля) ---
   translatedText?: string | null;
-  translationStatus?: 'idle' | 'translating' | 'done' | 'error';
+  translationStatus?: TranslationStatus;
   translationError?: string | null;
   sourceLang?: string | null;
   targetLang?: string | null;

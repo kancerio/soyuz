@@ -81,6 +81,28 @@ async function request<T>(
   return response.json();
 }
 
+// Единый маппинг backend-сообщения → Message
+function mapBackendMessage(m: any): Message {
+  return {
+    id: m.id,
+    text: m.content ?? m.text ?? '',
+    senderId: m.userId ?? m.senderId ?? 0,
+    chatId: m.chatId,
+    timestamp: m.createdAt ? new Date(m.createdAt) : (m.timestamp ? new Date(m.timestamp) : new Date()),
+    status: 'read' as const,
+    isEdited: m.isEdited ?? false,
+    isDeleted: m.isDeleted ?? false,
+
+    // AI-перевод — если backend когда-нибудь начнёт присылать эти поля,
+    // они автоматически подхватятся
+    translatedText: m.translatedText ?? null,
+    translationStatus: m.translationStatus ?? 'idle',
+    translationError: m.translationError ?? null,
+    sourceLang: m.sourceLang ?? null,
+    targetLang: m.targetLang ?? null,
+  };
+}
+
 export const apiClient = {
   // Auth
   register: (data: { email: string; username: string; password: string }) =>
@@ -168,18 +190,20 @@ export const apiClient = {
     const group = mockGroupStore.getGroup(chatId);
     if (group) {
       const msgs = mockGroupStore.getMessages(chatId);
-      const mapped: Message[] = msgs.map(msg => ({
-        id: msg.id,
-        content: msg.text,
-        userId: msg.senderId,
-        chatId: msg.chatId,
-        createdAt: msg.timestamp,
-        isEdited: false,
-        isDeleted: false,
-      }));
-      return mapped.slice(offset, offset + limit);
+      return msgs
+        .slice(offset, offset + limit)
+        .map(m => mapBackendMessage({
+          id: m.id,
+          content: m.text,
+          userId: m.senderId,
+          chatId: m.chatId,
+          createdAt: m.timestamp,
+          isEdited: false,
+          isDeleted: false,
+        }));
     }
-    return request<Message[]>(`/messages/chat/${chatId}?limit=${limit}&offset=${offset}`);
+    const data = await request<any[]>(`/messages/chat/${chatId}?limit=${limit}&offset=${offset}`);
+    return data.map(mapBackendMessage);
   },
 
   sendMessage: async (chatId: number, content: string) => {
@@ -194,17 +218,19 @@ export const apiClient = {
         timestamp: new Date(),
       };
       mockGroupStore.addMessage(chatId, newMessage);
-      return {
+      return mapBackendMessage({
         id: newMessage.id,
         content: newMessage.text,
         userId: newMessage.senderId,
         chatId: newMessage.chatId,
         createdAt: newMessage.timestamp,
-        isEdited: false,
-        isDeleted: false,
-      } as Message;
+      });
     }
-    return request<Message>(`/messages/chat/${chatId}`, { method: 'POST', body: JSON.stringify({ content }) });
+    const data = await request<any>(`/messages/chat/${chatId}`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+    return mapBackendMessage(data);
   },
 
   editMessage: (messageId: number, content: string) =>
