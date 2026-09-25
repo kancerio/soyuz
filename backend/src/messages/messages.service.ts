@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Message } from './message.entity';
@@ -37,16 +37,10 @@ export class MessagesService {
   }
 
   async editMessage(messageId: number, userId: number, newContent: string): Promise<Message> {
-    const message = await this.messagesRepository.findOne({
-      where: { id: messageId },
-    });
-
-    if (!message) {
-      throw new NotFoundException('Сообщение не найдено');
-    }
+    const message = await this.getMessage(messageId);
 
     if (message.userId !== userId) {
-      throw new NotFoundException('Вы можете редактировать только свои сообщения');
+      throw new ForbiddenException('Вы можете редактировать только свои сообщения');
     }
 
     message.content = newContent;
@@ -56,17 +50,26 @@ export class MessagesService {
     return this.messagesRepository.save(message);
   }
 
-  async deleteMessage(messageId: number, userId: number): Promise<{ deleted: boolean }> {
+  async getMessage(id: number): Promise<Message> {
     const message = await this.messagesRepository.findOne({
-      where: { id: messageId },
+      where: { id },
     });
 
     if (!message) {
       throw new NotFoundException('Сообщение не найдено');
     }
 
-    if (message.userId !== userId) {
-      throw new NotFoundException('Вы можете удалять только свои сообщения');
+    return message;
+  }
+
+  async deleteMessage(messageId: number, userId: number, userRole?: string): Promise<{ deleted: boolean }> {
+    const message = await this.getMessage(messageId);
+
+    const isAuthor = message.userId === userId;
+    const canDeleteAny = userRole === 'owner' || userRole === 'admin';
+    
+    if (!isAuthor && !canDeleteAny) {
+      throw new ForbiddenException('Вы можете удалять только свои сообщения');
     }
 
     message.isDeleted = true;
@@ -76,11 +79,30 @@ export class MessagesService {
     return { deleted: true };
   }
 
-  async getMessage(id: number): Promise<Message> {
-    const message = await this.messagesRepository.findOne({ where: { id } });
-    if (!message) {
-      throw new NotFoundException('Сообщение не найдено');
-    }
-    return message;
+  // ========== НОВЫЕ МЕТОДЫ ДЛЯ ПОДТВЕРЖДЕНИЯ ДОСТАВКИ ==========
+
+  async markAsDelivered(messageId: number, userId: number): Promise<Message> {
+    const message = await this.getMessage(messageId);
+    
+    message.isDelivered = true;
+    return this.messagesRepository.save(message);
+  }
+
+  async markAsRead(messageId: number, userId: number): Promise<Message> {
+    const message = await this.getMessage(messageId);
+    
+    message.isRead = true;
+    message.readAt = new Date();
+    return this.messagesRepository.save(message);
+  }
+
+  async getUndeliveredMessages(chatId: number, userId: number): Promise<Message[]> {
+    return this.messagesRepository.find({
+      where: {
+        chatId,
+        isDelivered: false,
+      },
+      relations: ['user'],
+    });
   }
 }
