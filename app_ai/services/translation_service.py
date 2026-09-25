@@ -1,12 +1,12 @@
-from app.models.translation import get_translation_model
-from app.core.logging import get_logger
-from app.core.config import settings
+from app_ai.models.translation import get_translation_model
+from app_ai.core.logging import get_logger
+from app_ai.core.config import settings
 
 logger = get_logger(__name__)
 
-def translate_text(text: str, target_lang: str) -> str:
+def translate_text(text: str, target_lang: str, source_lang: str = None) -> str:
     if settings.AI_MOCK_MODE:
-        logger.info(f"MOCK: translate '{text}' to {target_lang}")
+        logger.info(f"MOCK: translate '{text}' to {target_lang} (source={source_lang})")
         return f"[mock_{target_lang}] {text}"
     
     try:
