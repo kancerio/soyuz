@@ -11,6 +11,7 @@ import { Server, Socket } from 'socket.io';
 import { ChatsService } from './chats.service';
 import { MessagesService } from '../messages/messages.service';
 import { logger } from '../common/logger';
+import { OnEvent } from '@nestjs/event-emitter';
 
 @WebSocketGateway({
   cors: {
@@ -229,43 +230,33 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const { chatId, content } = data;
     const userId = this.socketToUser.get(client.id);
     
-    console.log('🔥🔥🔥 SEND_MESSAGE CALLED 🔥🔥🔥');
-    console.log('userId:', userId);
-    console.log('chatId:', chatId);
-    console.log('content:', content);
-    
     if (!userId) {
-      console.log('❌ No userId, aborting');
       client.emit('error', { message: 'Not authenticated' });
       return;
     }
     
     const isParticipant = await this.chatsService.isParticipant(chatId, userId);
-    console.log('isParticipant:', isParticipant);
-    
     if (!isParticipant) {
-      console.log('❌ Not a participant, aborting');
       client.emit('error', { message: 'You are not a participant of this chat' });
       return;
     }
     
     try {
-      const message = await this.messagesService.sendMessage(chatId, userId, content);
-      console.log('✅ Message saved, id:', message.id);
+      // Сохраняем сообщение с переводом (перевод в фоне)
+      const message = await this.messagesService.sendMessageWithTranslation(
+        chatId,
+        userId,
+        content,
+        'auto',
+        'en',
+      );
       
       await this.messagesService.markAsDelivered(message.id, userId);
-      console.log('✅ Marked as delivered for sender');
       
       const dbSaveTime = Date.now() - startTime;
       
-      const room = this.server.sockets.adapter.rooms.get(`chat_${chatId}`);
-      const roomSize = room ? room.size : 0;
-      console.log(`📊 Room chat_${chatId} has ${roomSize} sockets`);
-      console.log(`📤 Broadcasting message ${message.id} to room chat_${chatId}`);
-      
+      // Рассылаем сообщение всем в комнате (с оригиналом, перевод придёт позже)
       this.server.to(`chat_${chatId}`).emit('new_message', message);
-      
-      console.log(`✅ Broadcast complete`);
       
       const totalTime = Date.now() - startTime;
       
@@ -281,7 +272,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('❌ Error in send_message:', error.message);
       logger.error('Send message error', {
         event: 'send_message_error',
         user_id: userId,
@@ -531,6 +521,26 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       event: 'get_online_users',
       online_count: onlineUsers.length,
       users: onlineUsers,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // ========== СОБЫТИЕ ПЕРЕВОДА ==========
+
+  @OnEvent('message.translated')
+  handleMessageTranslated(payload: {
+    messageId: number;
+    chatId: number;
+    translatedText: string;
+    translateStatus: string;
+  }) {
+    this.server.to(`chat_${payload.chatId}`).emit('message_translated', payload);
+
+    logger.info('Message translated', {
+      event: 'message_translated',
+      message_id: payload.messageId,
+      chat_id: payload.chatId,
+      translate_status: payload.translateStatus,
       timestamp: new Date().toISOString(),
     });
   }

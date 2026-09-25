@@ -2,13 +2,14 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Requ
 import { AuthGuard } from '@nestjs/passport';
 import { MessagesService } from './messages.service';
 import { ChatsService } from '../chats/chats.service';
+import { AssistDto } from './dto/assist.dto';
 
 @Controller('messages')
 @UseGuards(AuthGuard('jwt'))
 export class MessagesController {
   constructor(
     private readonly messagesService: MessagesService,
-    private readonly chatsService: ChatsService,  // ← добавляем
+    private readonly chatsService: ChatsService,
   ) {}
 
   @Get('chat/:chatId')
@@ -28,10 +29,21 @@ export class MessagesController {
   async sendMessage(
     @Request() req,
     @Param('chatId') chatId: string,
-    @Body() body: { content: string },
+    @Body() body: { content: string; sourceLang?: string; targetLang?: string },
   ) {
-    return this.messagesService.sendMessage(+chatId, req.user.userId, body.content);
+    return this.messagesService.sendMessageWithTranslation(
+      +chatId,
+      req.user.userId,
+      body.content,
+      body.sourceLang || 'auto',
+      body.targetLang || 'en',
+    );
   }
+
+  @Post('assist')
+async assist(@Body() body: AssistDto) {
+  return this.messagesService.assist(body.text, body.action);
+}
 
   @Put(':messageId')
   async editMessage(
