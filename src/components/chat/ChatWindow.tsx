@@ -28,12 +28,16 @@ function mergeMessages(prev: Message[], incoming: Message[]): Message[] {
       map.set(m.id, {
         ...existing,
         ...m,
+        // сохраняем AI-поля, если backend не прислал
         translatedText: m.translatedText ?? existing.translatedText,
-        translationStatus: m.translationStatus ?? existing.translationStatus,
-        translationError: m.translationError ?? existing.translationError,
+        translateStatus: m.translateStatus ?? existing.translateStatus,
         sourceLang: m.sourceLang ?? existing.sourceLang,
         targetLang: m.targetLang ?? existing.targetLang,
-        status: existing.status === 'sending' ? m.status : (m.status ?? existing.status),
+        // локальный статус отправки не перетирается
+        localStatus:
+          existing.localStatus === 'sending'
+            ? m.localStatus
+            : (m.localStatus ?? existing.localStatus),
       });
     } else {
       map.set(m.id, m);
@@ -59,12 +63,11 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
   const [membersMap, setMembersMap] = useState<Map<number, string>>(new Map());
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [membersModalKey, setMembersModalKey] = useState(0);
-
   const [rewrite, setRewrite] = useState<RewriteState>({ status: 'idle' });
 
   const targetLanguage = (user?.language || 'en').toLowerCase();
 
-  // --- Информация о чате ---
+  // Информация о чате
   useEffect(() => {
     const fetchChatInfo = async () => {
       try {
@@ -77,7 +80,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     fetchChatInfo();
   }, [chatIdNum]);
 
-  // --- Участники группы ---
+  // Участники группы
   useEffect(() => {
     if (!chatInfo?.isGroup) return;
     const fetchMembers = async () => {
@@ -93,7 +96,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     fetchMembers();
   }, [chatInfo?.isGroup, chatIdNum, membersModalKey]);
 
-  // --- WebSocket ---
+  // WebSocket
   useEffect(() => {
     if (!user) return;
     const socket = initSocket(user.id);
@@ -103,22 +106,50 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       if (Number(msg.chatId) !== chatIdNum) return;
       const incoming: Message = {
         id: msg.id,
-        text: msg.content,
+        content: msg.content,
         senderId: msg.userId,
         chatId: msg.chatId,
         timestamp: msg.createdAt ? new Date(msg.createdAt) : new Date(),
-        status: msg.userId === user.id ? 'read' : 'delivered',
         isEdited: msg.isEdited ?? false,
         isDeleted: msg.isDeleted ?? false,
-        translationStatus: 'idle',
+        isDelivered: msg.isDelivered ?? false,
+        isRead: msg.isRead ?? false,
+        readAt: msg.readAt ?? null,
+        originalText: msg.originalText ?? msg.content,
+        sourceLang: msg.sourceLang ?? null,
+        translatedText: msg.translatedText ?? null,
+        targetLang: msg.targetLang ?? null,
+        translateStatus: msg.translateStatus ?? 'skipped',
+        localStatus: msg.userId === user.id ? 'read' : 'delivered',
       };
       setMessages(prev => mergeMessages(prev, [incoming]));
+    };
+
+    // 🎯 Новое событие — перевод готов
+    const handleMessageTranslated = (data: {
+      messageId: number;
+      chatId: number;
+      translatedText: string;
+      translateStatus: 'completed' | 'failed';
+    }) => {
+      if (Number(data.chatId) !== chatIdNum) return;
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === data.messageId
+            ? {
+                ...m,
+                translatedText: data.translatedText,
+                translateStatus: data.translateStatus,
+              }
+            : m
+        )
+      );
     };
 
     const handleMessageUpdated = (data: { id: number; content: string }) => {
       setMessages(prev =>
         prev.map(m =>
-          m.id === data.id ? { ...m, text: data.content, isEdited: true } : m
+          m.id === data.id ? { ...m, content: data.content, isEdited: true } : m
         )
       );
     };
@@ -126,24 +157,26 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     const handleMessageDeleted = (data: { id: number }) => {
       setMessages(prev =>
         prev.map(m =>
-          m.id === data.id ? { ...m, text: '[Удалено]', isDeleted: true } : m
+          m.id === data.id ? { ...m, content: '[Удалено]', isDeleted: true } : m
         )
       );
     };
 
     socket.on('new_message', handleNewMessage);
+    socket.on('message_translated', handleMessageTranslated);
     socket.on('message_updated', handleMessageUpdated);
     socket.on('message_deleted', handleMessageDeleted);
 
     return () => {
       socket.emit('leave_chat', { chatId: chatIdNum });
       socket.off('new_message', handleNewMessage);
+      socket.off('message_translated', handleMessageTranslated);
       socket.off('message_updated', handleMessageUpdated);
       socket.off('message_deleted', handleMessageDeleted);
     };
   }, [chatIdNum, user]);
 
-  // --- История ---
+  // История
   useEffect(() => {
     const fetchMessages = async () => {
       setLoading(true);
@@ -163,7 +196,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // --- Отправка ---
+  // Отправка — с автоматическим переводом на язык пользователя
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
@@ -173,12 +206,16 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     const tempId = Date.now();
     const tempMessage: Message = {
       id: tempId,
-      text: content,
+      content,
       senderId: user?.id ?? 0,
       chatId: chatIdNum,
       timestamp: new Date(),
-      status: 'sending',
-      translationStatus: 'idle',
+      originalText: content,
+      sourceLang: 'auto',
+      targetLang: targetLanguage,
+      translatedText: null,
+      translateStatus: 'pending',
+      localStatus: 'sending',
     };
     setMessages(prev => mergeMessages(prev, [tempMessage]));
 
@@ -196,7 +233,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
               ? {
                   ...m,
                   id: msg.id,
-                  status: 'sent',
+                  localStatus: 'sent',
                   timestamp: msg.createdAt ? new Date(msg.createdAt) : new Date(),
                 }
               : m
@@ -204,12 +241,12 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         );
         setTimeout(() => {
           setMessages(prev =>
-            prev.map(m => (m.id === msg.id ? { ...m, status: 'delivered' } : m))
+            prev.map(m => (m.id === msg.id ? { ...m, localStatus: 'delivered' } : m))
           );
         }, 1000);
         setTimeout(() => {
           setMessages(prev =>
-            prev.map(m => (m.id === msg.id ? { ...m, status: 'read' } : m))
+            prev.map(m => (m.id === msg.id ? { ...m, localStatus: 'read' } : m))
           );
         }, 3000);
       }
@@ -227,7 +264,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     }, 5000);
 
     try {
-      await apiClient.sendMessage(chatIdNum, content);
+      await apiClient.sendMessage(chatIdNum, content, 'auto', targetLanguage);
     } catch (error) {
       console.error('Failed to send message:', error);
       cleanupFallback();
@@ -254,57 +291,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
 
   const refreshRoles = () => setMembersModalKey(prev => prev + 1);
 
-  // --- Перевод ---
-  const handleTranslate = async (msg: Message) => {
-    if (msg.translationStatus === 'translating') return;
-    if (msg.isDeleted) return;
-
-    setMessages(prev =>
-      prev.map(m =>
-        m.id === msg.id
-          ? { ...m, translationStatus: 'translating', targetLang: targetLanguage }
-          : m
-      )
-    );
-
-    try {
-      const res = await apiClient.translateMessage(
-        msg.text,
-        'auto',
-        targetLanguage,
-        `msg-${msg.id}`
-      );
-      setMessages(prev =>
-        prev.map(m =>
-          m.id === msg.id
-            ? {
-                ...m,
-                translationStatus: 'done',
-                translatedText: res.result,
-                sourceLang: res.source_lang || 'auto',
-                targetLang: res.target_lang || targetLanguage,
-                translationError: null,
-              }
-            : m
-        )
-      );
-    } catch (err: any) {
-      setMessages(prev =>
-        prev.map(m =>
-          m.id === msg.id
-            ? {
-                ...m,
-                translationStatus: 'error',
-                translationError: err?.message || 'Ошибка перевода',
-                targetLang: targetLanguage,
-              }
-            : m
-        )
-      );
-    }
-  };
-
-  // --- AI-rewrite ---
+  // AI-rewrite
   const handleAssist = async (action: RewriteAction) => {
     const draft = newMessage.trim();
     if (!draft) return;
@@ -312,17 +299,13 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     setRewrite({ status: 'loading', action, originalDraft: draft });
 
     try {
-      const res = await apiClient.assistText(
-        draft,
-        action,
-        undefined,
-        `assist-${Date.now()}`
-      );
+      const res = await apiClient.assistText(draft, action);
       setRewrite({
         status: 'preview',
         action,
         originalDraft: draft,
-        preview: res.result,
+        preview: res.resultText,
+        mock: res.mock,
       });
     } catch (err: any) {
       setRewrite({
@@ -415,28 +398,23 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                     {getRoleSymbol(membersMap.get(msg.senderId))}
                   </span>
                 )}
-                {msg.isDeleted ? '[Удалено]' : msg.text}
+                {msg.isDeleted ? '[Удалено]' : msg.content}
               </p>
 
               <div className="text-xs opacity-70 mt-1 flex justify-end gap-1">
                 <span>{msg.timestamp.toLocaleTimeString()}</span>
-                {msg.senderId === user?.id && <span>{getStatusIcon(msg.status)}</span>}
+                {msg.senderId === user?.id && <span>{getStatusIcon(msg.localStatus)}</span>}
                 {msg.isEdited && <span>(ред.)</span>}
               </div>
 
-              <TranslationBlock
-                message={msg}
-                targetLanguage={targetLanguage}
-                isOwn={msg.senderId === user?.id}
-                onTranslate={handleTranslate}
-              />
+              <TranslationBlock message={msg} isOwn={msg.senderId === user?.id} />
             </div>
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* AI-rewrite панель */}
+      {/* AI-rewrite */}
       <RewritePanel
         draft={newMessage}
         state={rewrite}

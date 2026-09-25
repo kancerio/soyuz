@@ -1,22 +1,29 @@
-export type TranslationStatus = 'idle' | 'translating' | 'done' | 'error';
+export type TranslateStatus = 'pending' | 'completed' | 'failed' | 'skipped';
 
 export interface Message {
-  // --- Базовые поля (совместимы с backend) ---
+  // --- Базовые ---
   id: number;
-  text: string;
-  senderId: number;
+  content: string;
+  senderId: number;      // маппится из userId
   chatId: number;
-  timestamp: Date;
-  status?: 'sending' | 'sent' | 'delivered' | 'read';
+  timestamp: Date;       // маппится из createdAt
   isEdited?: boolean;
   isDeleted?: boolean;
 
-  // --- AI: перевод (новые поля) ---
-  translatedText?: string | null;
-  translationStatus?: TranslationStatus;
-  translationError?: string | null;
+  // --- Доставка / прочтение ---
+  isDelivered?: boolean;
+  isRead?: boolean;
+  readAt?: string | null;
+
+  // --- AI перевод ---
+  originalText?: string | null;
   sourceLang?: string | null;
+  translatedText?: string | null;
   targetLang?: string | null;
+  translateStatus?: TranslateStatus;
+
+  // --- Локальный статус отправки (только на фронте) ---
+  localStatus?: 'sending' | 'sent' | 'delivered' | 'read';
 }
 
 export interface Chat {

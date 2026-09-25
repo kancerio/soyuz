@@ -1,4 +1,4 @@
-import { Chat, Message } from '@/types/chat';
+import { Chat, Message, TranslateStatus } from '@/types/chat';
 import { User } from '@/types/user';
 import { mockGroupStore } from './mockGroupStore';
 
@@ -12,13 +12,11 @@ if (typeof window !== 'undefined') {
   refreshToken = sessionStorage.getItem('refreshToken');
 }
 
-export interface TextOperationResponse {
-  input_text: string;
-  result: string;
-  action: 'translate' | 'shorten' | 'formal' | 'friendly';
-  source_lang: string | null;
-  target_lang: string | null;
-  correlation_id: string;
+export interface AssistResponse {
+  originalText: string;
+  resultText: string;
+  action: 'shorten' | 'formal' | 'friendly';
+  status: 'completed' | 'failed';
   mock: boolean;
 }
 
@@ -44,9 +42,7 @@ async function request<T>(
   const url = `${API_BASE}${endpoint}`;
   const headers = new Headers(options.headers);
   headers.set('Content-Type', 'application/json');
-  if (accessToken) {
-    headers.set('Authorization', `Bearer ${accessToken}`);
-  }
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
 
   const response = await fetch(url, { ...options, headers });
   if (response.status === 401 && retry && refreshToken) {
@@ -74,7 +70,9 @@ async function request<T>(
     let errorMsg = `Request failed: ${response.status}`;
     try {
       const body = await response.json();
-      errorMsg = body.message || errorMsg;
+      errorMsg = Array.isArray(body.message)
+        ? body.message.join(', ')
+        : (body.message || errorMsg);
     } catch {}
     throw new Error(errorMsg);
   }
@@ -85,21 +83,21 @@ async function request<T>(
 function mapBackendMessage(m: any): Message {
   return {
     id: m.id,
-    text: m.content ?? m.text ?? '',
-    senderId: m.userId ?? m.senderId ?? 0,
+    content: m.content ?? '',
+    senderId: m.userId ?? 0,
     chatId: m.chatId,
-    timestamp: m.createdAt ? new Date(m.createdAt) : (m.timestamp ? new Date(m.timestamp) : new Date()),
-    status: 'read' as const,
+    timestamp: m.createdAt ? new Date(m.createdAt) : new Date(),
     isEdited: m.isEdited ?? false,
     isDeleted: m.isDeleted ?? false,
+    isDelivered: m.isDelivered ?? false,
+    isRead: m.isRead ?? false,
+    readAt: m.readAt ?? null,
 
-    // AI-перевод — если backend когда-нибудь начнёт присылать эти поля,
-    // они автоматически подхватятся
-    translatedText: m.translatedText ?? null,
-    translationStatus: m.translationStatus ?? 'idle',
-    translationError: m.translationError ?? null,
+    originalText: m.originalText ?? m.content ?? null,
     sourceLang: m.sourceLang ?? null,
+    translatedText: m.translatedText ?? null,
     targetLang: m.targetLang ?? null,
+    translateStatus: (m.translateStatus as TranslateStatus) ?? 'pending',
   };
 }
 
@@ -130,24 +128,20 @@ export const apiClient = {
   // Users
   getUsers: () => request<User[]>('/users'),
 
-  // Chats (объединяем реальные чаты и группы из хранилища)
+  // Chats
   getChats: async () => {
     const realChats = await request<Chat[]>('/chats');
-
     const allGroups = mockGroupStore.getGroups();
     const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
-
     const userGroups = allGroups.filter(group =>
       group.members.some(member => member.userId === currentUser.id)
     );
-
     const groupChats: Chat[] = userGroups.map(group => ({
       id: group.id,
       title: group.title,
       isGroup: true,
       createdAt: new Date(),
     }));
-
     return [...realChats, ...groupChats];
   },
   getChat: async (id: number) => {
@@ -162,16 +156,14 @@ export const apiClient = {
   addParticipant: (chatId: number, userId: number) =>
     request<Chat>(`/chats/${chatId}/add/${userId}`, { method: 'POST' }),
 
-  // Группы (заглушки)
+  // Группы (моки)
   createGroupChat: async (title: string, participantIds: number[]) => {
     const allUsers = await apiClient.getUsers();
     const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
     const newGroup = mockGroupStore.createGroup(title, currentUser.id, participantIds, allUsers);
     return { id: newGroup.id, title: newGroup.title, isGroup: true, createdAt: new Date() } as Chat;
   },
-  getChatMembers: async (chatId: number) => {
-    return mockGroupStore.getMembers(chatId);
-  },
+  getChatMembers: async (chatId: number) => mockGroupStore.getMembers(chatId),
   updateMemberRole: async (chatId: number, userId: number, role: string) => {
     mockGroupStore.updateMemberRole(chatId, userId, role as any);
   },
@@ -185,28 +177,34 @@ export const apiClient = {
     return { success: true };
   },
 
-  // Messages (разделяем личные и групповые)
+  // Messages
   getMessages: async (chatId: number, limit = 50, offset = 0) => {
     const group = mockGroupStore.getGroup(chatId);
     if (group) {
       const msgs = mockGroupStore.getMessages(chatId);
-      return msgs
-        .slice(offset, offset + limit)
-        .map(m => mapBackendMessage({
+      return msgs.slice(offset, offset + limit).map(m =>
+        mapBackendMessage({
           id: m.id,
           content: m.text,
           userId: m.senderId,
           chatId: m.chatId,
           createdAt: m.timestamp,
-          isEdited: false,
-          isDeleted: false,
-        }));
+          translateStatus: 'skipped',
+          originalText: m.text,
+        })
+      );
     }
     const data = await request<any[]>(`/messages/chat/${chatId}?limit=${limit}&offset=${offset}`);
     return data.map(mapBackendMessage);
   },
 
-  sendMessage: async (chatId: number, content: string) => {
+  // Отправка с автоматическим переводом (targetLang)
+  sendMessage: async (
+    chatId: number,
+    content: string,
+    sourceLang = 'auto',
+    targetLang?: string
+  ) => {
     const group = mockGroupStore.getGroup(chatId);
     if (group) {
       const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
@@ -224,11 +222,19 @@ export const apiClient = {
         userId: newMessage.senderId,
         chatId: newMessage.chatId,
         createdAt: newMessage.timestamp,
+        originalText: newMessage.text,
+        sourceLang,
+        targetLang: targetLang ?? null,
+        translateStatus: 'skipped',
       });
     }
+
+    const body: any = { content, sourceLang };
+    if (targetLang) body.targetLang = targetLang;
+
     const data = await request<any>(`/messages/chat/${chatId}`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(body),
     });
     return mapBackendMessage(data);
   },
@@ -238,87 +244,14 @@ export const apiClient = {
   deleteMessage: (messageId: number) =>
     request<{ deleted: boolean }>(`/messages/${messageId}`, { method: 'DELETE' }),
 
-  // --- AI: перевод (заглушка до появления backend-прокси) ---
-  translateMessage: async (
-    text: string,
-    sourceLang: string,
-    targetLang: string,
-    correlationId?: string
-  ): Promise<TextOperationResponse> => {
-    // TODO: заменить на вызов через NestJS: POST /ai/translate
-    // Сейчас — эмуляция AI-сервиса v0.2 (mock)
-    await new Promise(r => setTimeout(r, 800));
-
-    // Эмуляция ошибки 503 для теста: если текст содержит "fail"
-    if (text.toLowerCase().includes('fail')) {
-      const err: any = new Error('AI provider unavailable');
-      err.code = 'ai_provider_unavailable';
-      err.status = 503;
-      throw err;
-    }
-
-    return {
-      input_text: text,
-      result: `[${sourceLang}->${targetLang}] ${text}`,
-      action: 'translate',
-      source_lang: sourceLang,
-      target_lang: targetLang,
-      correlation_id: correlationId || `msg-${Date.now()}`,
-      mock: true,
-    };
-  },
-    // --- AI: помощник (shorten / formal / friendly) — заглушка ---
+  // --- AI-rewrite (preview) ---
   assistText: async (
     text: string,
-    action: 'shorten' | 'formal' | 'friendly',
-    context?: string,
-    correlationId?: string
-  ): Promise<TextOperationResponse> => {
-    // TODO: заменить на POST /ai/assist через NestJS
-    await new Promise(r => setTimeout(r, 700));
-
-    // Валидация (эмуляция 422)
-    if (!text || text.trim().length === 0) {
-      const err: any = new Error('Text must not be empty');
-      err.code = 'validation_error';
-      err.status = 422;
-      err.details = [{ field: 'text', message: 'Text must not be empty' }];
-      throw err;
-    }
-    if (text.length > 5000) {
-      const err: any = new Error('Text is too long');
-      err.code = 'validation_error';
-      err.status = 422;
-      err.details = [{ field: 'text', message: 'Max length is 5000' }];
-      throw err;
-    }
-
-    // Эмуляция 503
-    if (text.toLowerCase().includes('fail')) {
-      const err: any = new Error('AI provider unavailable');
-      err.code = 'ai_provider_unavailable';
-      err.status = 503;
-      throw err;
-    }
-
-    // Mock-поведение (соответствует контракту v0.2)
-    let result = text;
-    if (action === 'shorten') {
-      result = text.length > 160 ? text.slice(0, 157) + '...' : text;
-    } else if (action === 'formal') {
-      result = `[формально] ${text}`;
-    } else if (action === 'friendly') {
-      result = `[дружелюбно] ${text} 😊`;
-    }
-
-    return {
-      input_text: text,
-      result,
-      action,
-      source_lang: null,
-      target_lang: null,
-      correlation_id: correlationId || `assist-${Date.now()}`,
-      mock: true,
-    };
+    action: 'shorten' | 'formal' | 'friendly'
+  ): Promise<AssistResponse> => {
+    return request<AssistResponse>('/messages/assist', {
+      method: 'POST',
+      body: JSON.stringify({ text, action }),
+    });
   },
 };

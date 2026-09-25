@@ -10,6 +10,7 @@ export interface RewriteState {
   action?: RewriteAction;
   originalDraft?: string;
   preview?: string;
+  mock?: boolean;
   error?: string;
 }
 
@@ -34,14 +35,12 @@ export default function RewritePanel({
 
   return (
     <div className="px-4 pt-2 border-t dark:border-gray-700">
-      {/* Кнопки режимов */}
       <div className="flex gap-2 mb-2">
         <button
           type="button"
           onClick={() => onAction('shorten')}
           disabled={disabled}
           className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
-          title="Сократить текст"
         >
           ✂️ Сократить
         </button>
@@ -50,32 +49,35 @@ export default function RewritePanel({
           onClick={() => onAction('formal')}
           disabled={disabled}
           className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
-          title="Сделать формальным"
         >
-          🎩 Формально
+          🎩 Официально
         </button>
         <button
           type="button"
           onClick={() => onAction('friendly')}
           disabled={disabled}
           className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
-          title="Сделать дружелюбным"
         >
           😊 Дружелюбно
         </button>
       </div>
 
-      {/* Загрузка */}
       {state.status === 'loading' && (
         <div className="mb-2">
           <LoadingState size="sm" text="Обработка текста…" />
         </div>
       )}
 
-      {/* Preview */}
       {state.status === 'preview' && (
         <div className="mb-2 p-2 rounded border border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700">
-          <div className="text-xs text-gray-500 mb-1">Предпросмотр:</div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs text-gray-500">Предпросмотр:</span>
+            {state.mock && (
+              <span className="text-[10px] uppercase text-amber-600 dark:text-amber-400 border border-amber-400 px-1 rounded">
+                тестовый режим
+              </span>
+            )}
+          </div>
           <div className="text-sm text-gray-800 dark:text-gray-100 whitespace-pre-wrap">
             {state.preview}
           </div>
@@ -98,7 +100,6 @@ export default function RewritePanel({
         </div>
       )}
 
-      {/* Ошибка */}
       {state.status === 'error' && (
         <div className="mb-2">
           <ErrorState
