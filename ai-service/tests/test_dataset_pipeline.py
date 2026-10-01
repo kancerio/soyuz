@@ -105,3 +105,33 @@ def test_generated_examples_get_local_provenance_and_validate():
         "terms_reference": "https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html",
     }
     assert validate_records(records) == []
+
+
+def test_local_checkpoint_examples_keep_model_license_provenance():
+    raw_response = {
+        "examples": [
+            {
+                "input": {"prompt": "Сделай сообщение вежливее", "action": "friendly"},
+                "output": {"result": "Пожалуйста, сделай сообщение вежливее."},
+            }
+        ]
+    }
+
+    records = normalize_generated_examples(
+        raw_response,
+        task="assist",
+        split="train",
+        model="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+        batch_id="local-a",
+        source="deepseek_local",
+        provenance_reference="https://github.com/deepseek-ai/DeepSeek-R1/blob/main/LICENSE",
+    )
+
+    assert records[0]["metadata"] == {
+        "source": "deepseek_local",
+        "synthetic": True,
+        "review_status": "unreviewed",
+        "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+        "license_reference": "https://github.com/deepseek-ai/DeepSeek-R1/blob/main/LICENSE",
+    }
+    assert validate_records(records) == []

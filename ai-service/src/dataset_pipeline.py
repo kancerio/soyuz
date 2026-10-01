@@ -15,10 +15,11 @@ from typing import Any, Iterable
 SUPPORTED_LANGUAGES = {"ru", "en", "de", "fr", "es", "zh", "ar"}
 SUPPORTED_TASKS = {"translate", "assist", "summary", "document_analysis", "stt"}
 SUPPORTED_SPLITS = {"train", "validation", "test"}
-SUPPORTED_SOURCES = {"seed", "deepseek_api", "human", "public_dataset"}
+SUPPORTED_SOURCES = {"seed", "deepseek_api", "deepseek_local", "human", "public_dataset"}
 SUPPORTED_REVIEW_STATUSES = {"unreviewed", "machine_checked", "human_reviewed", "rejected"}
 ASSIST_ACTIONS = {"shorten", "formal", "friendly"}
 DEEPSEEK_TERMS_URL = "https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html"
+DEEPSEEK_R1_LICENSE_URL = "https://github.com/deepseek-ai/DeepSeek-R1/blob/main/LICENSE"
 
 
 def load_jsonl(path: str | Path) -> list[dict[str, Any]]:
@@ -134,6 +135,14 @@ def validate_records(records: Iterable[dict[str, Any]]) -> list[str]:
                     errors,
                     str(record_id),
                 )
+            if source == "deepseek_local":
+                _require_string(metadata.get("model"), "metadata.model", errors, str(record_id))
+                _require_string(
+                    metadata.get("license_reference"),
+                    "metadata.license_reference",
+                    errors,
+                    str(record_id),
+                )
             if source == "public_dataset":
                 _require_string(metadata.get("source_ref"), "metadata.source_ref", errors, str(record_id))
                 _require_string(metadata.get("license"), "metadata.license", errors, str(record_id))
@@ -183,6 +192,8 @@ def normalize_generated_examples(
     split: str,
     model: str,
     batch_id: str = "batch",
+    source: str = "deepseek_api",
+    provenance_reference: str | None = None,
 ) -> list[dict[str, Any]]:
     """Attach trusted local provenance to model-produced examples.
 
@@ -196,12 +207,19 @@ def normalize_generated_examples(
         raise ValueError(f"unsupported split: {split}")
     if not model.strip():
         raise ValueError("model must be non-empty")
+    if source not in {"deepseek_api", "deepseek_local"}:
+        raise ValueError("source must be deepseek_api or deepseek_local")
     if not re.fullmatch(r"[A-Za-z0-9_-]+", batch_id):
         raise ValueError("batch_id must contain only letters, digits, '-' or '_'")
 
     examples: Any = raw_response.get("examples") if isinstance(raw_response, dict) else raw_response
     if not isinstance(examples, list) or not examples:
         raise ValueError("model response must contain a non-empty examples array")
+
+    if source == "deepseek_api":
+        provenance = {"terms_reference": provenance_reference or DEEPSEEK_TERMS_URL}
+    else:
+        provenance = {"license_reference": provenance_reference or DEEPSEEK_R1_LICENSE_URL}
 
     records: list[dict[str, Any]] = []
     for index, example in enumerate(examples, 1):
@@ -217,11 +235,11 @@ def normalize_generated_examples(
                 "input": example["input"],
                 "output": example["output"],
                 "metadata": {
-                    "source": "deepseek_api",
+                    "source": source,
                     "synthetic": True,
                     "review_status": "unreviewed",
                     "model": model,
-                    "terms_reference": DEEPSEEK_TERMS_URL,
+                    **provenance,
                 },
             }
         )

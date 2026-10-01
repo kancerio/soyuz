@@ -39,7 +39,8 @@
 ```
 
 Для синтетических строк генератор сам добавляет модель и ссылку на условия
-DeepSeek. Для строк из публичного набора обязательны `source_ref` и `license`;
+DeepSeek (`deepseek_api`) или лицензию checkpoint (`deepseek_local`). Для строк
+из публичного набора обязательны `source_ref` и `license`;
 для пользовательских данных — `permission_ref`. Это не позволяет случайно
 смешать в обучении данные без подтверждённого происхождения.
 
@@ -62,6 +63,12 @@ python tools/generate_dataset.py --task translate --count 50 --output dataset/ge
 
 Ключ не записывается в файл и не выводится в лог. Полученные строки остаются
 `unreviewed`, поэтому их нужно проверить и только потом включать в `train`.
+
+Если API-баланс недоступен, подготовлен ноутбук
+`notebooks/deepseek_colab_dataset.ipynb`. Он запускает
+`deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` в 4-битном режиме на GPU Colab,
+сохраняет строки в Google Drive и помечает их как `deepseek_local`. При нехватке
+памяти можно заменить checkpoint на `DeepSeek-R1-Distill-Qwen-1.5B`.
 
 ## Источник и разрешения
 
@@ -89,6 +96,11 @@ PII/секретов и за проверку фактической точно�
    для полноразмерных DeepSeek-R1/V3.
 3. Разрешённый источник аудио и лицензия для STT. Текстовая строка без аудио не
    является обучающим примером для распознавания речи.
+
+Открытые R1-Distill-Qwen checkpoints опубликованы DeepSeek под MIT, а базовая
+Qwen-2.5 серия — под Apache 2.0; перед распространением модели всё равно нужно
+сохранить исходные лицензионные уведомления ([официальный список checkpoint-ов и
+лицензий](https://github.com/deepseek-ai/DeepSeek-R1#7-license)).
 
 В качестве кандидата для пилота можно рассмотреть [Mozilla Common Voice через
 Mozilla Data Collective](https://commonvoice.mozilla.org/dav/terms): текущие
