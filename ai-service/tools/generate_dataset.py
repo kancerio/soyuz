@@ -8,6 +8,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
@@ -97,6 +98,7 @@ def main() -> int:
         task=args.task,
         split=args.split,
         model=args.model,
+        batch_id=uuid.uuid4().hex[:12],
     )
     errors = validate_records(records)
     if errors:

@@ -93,8 +93,10 @@ def test_generated_examples_get_local_provenance_and_validate():
         task="translate",
         split="train",
         model="test-model",
+        batch_id="batch-a",
     )
 
+    assert records[0]["id"] == "translate-batch-a-0001"
     assert records[0]["metadata"] == {
         "source": "deepseek_api",
         "synthetic": True,

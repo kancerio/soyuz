@@ -7,6 +7,7 @@ CI and before a model or a provider is selected.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -169,6 +170,8 @@ def build_generation_prompt(task: str, languages: list[str], count: int) -> str:
 Каждый объект должен содержать input и output и соответствовать контракту задачи.
 Для translate input обязан содержать "text", "source_lang" и "target_lang", а output — "translated_text".
 Для assist поле "action" может быть только shorten, formal или friendly, а output должен содержать "result".
+Для summary input должен содержать непустой массив messages с sender_id, text и timestamp, а output — summary.
+Для document_analysis input должен содержать document_text, а output — summary и classification.
 Сохраняй смысл входа, не выдумывай факты и не смешивай языки без причины.
 """
 
@@ -179,6 +182,7 @@ def normalize_generated_examples(
     task: str,
     split: str,
     model: str,
+    batch_id: str = "batch",
 ) -> list[dict[str, Any]]:
     """Attach trusted local provenance to model-produced examples.
 
@@ -192,6 +196,8 @@ def normalize_generated_examples(
         raise ValueError(f"unsupported split: {split}")
     if not model.strip():
         raise ValueError("model must be non-empty")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", batch_id):
+        raise ValueError("batch_id must contain only letters, digits, '-' or '_'")
 
     examples: Any = raw_response.get("examples") if isinstance(raw_response, dict) else raw_response
     if not isinstance(examples, list) or not examples:
@@ -205,7 +211,7 @@ def normalize_generated_examples(
             raise ValueError(f"example {index} must contain input and output objects")
         records.append(
             {
-                "id": f"{task}-synthetic-{index:04d}",
+                "id": f"{task}-{batch_id}-{index:04d}",
                 "task": task,
                 "split": split,
                 "input": example["input"],
