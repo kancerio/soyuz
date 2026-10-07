@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from typing import Literal, Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
@@ -430,7 +431,21 @@ def _parse_summary_output(
     try:
         payload = json.loads(cleaned)
     except (TypeError, json.JSONDecodeError) as exc:
-        raise LLMProviderError("LM Studio returned an invalid structured summary") from exc
+        # Small local models sometimes emit JSON-like objects with unquoted
+        # property names even when the prompt asks for strict JSON. Normalize
+        # only those property names, then parse normally so values remain
+        # protected by the standard JSON decoder.
+        relaxed = re.sub(
+            r'([{,]\s*)([A-Za-z_][A-Za-z0-9_-]*)\s*:',
+            r'\1"\2":',
+            cleaned,
+        )
+        try:
+            payload = json.loads(relaxed)
+        except (TypeError, json.JSONDecodeError) as relaxed_exc:
+            raise LLMProviderError(
+                "LM Studio returned an invalid structured summary"
+            ) from relaxed_exc
     if not isinstance(payload, dict):
         raise LLMProviderError("LM Studio returned an invalid structured summary")
 

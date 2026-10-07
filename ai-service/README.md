@@ -61,6 +61,24 @@ STT_MODEL=whisper-1
 STT_API_KEY=
 ```
 
+Для локального стенда в репозитории есть готовый адаптер на `faster-whisper`.
+Он запускается отдельным процессом на хосте, а контейнер `ai-service` обращается
+к нему через `host.docker.internal`:
+
+```powershell
+cd ai-service
+python -m pip install -r requirements-stt-local.txt
+$env:WHISPER_MODEL = "Systran/faster-whisper-base"
+$env:WHISPER_DEVICE = "cpu"
+$env:WHISPER_COMPUTE_TYPE = "int8"
+python tools/local_whisper_server.py
+```
+
+После запуска адаптера задайте `STT_PROVIDER=openai_compatible`,
+`STT_BASE_URL=http://host.docker.internal:9000/v1` и
+`STT_MODEL=whisper-1`. Для standalone-запуска без Docker используйте
+`http://127.0.0.1:9000/v1`.
+
 `/stt` проверяет формат и размер файла, а `/summary` проверяет список сообщений.
 Ошибки валидации возвращаются с HTTP 422, слишком большой файл — с 413,
 неподдерживаемый тип — с 415, недоступный или некорректный провайдер — с 502.

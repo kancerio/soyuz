@@ -44,7 +44,13 @@ AI_BASE_URL=http://127.0.0.1:1234/v1
 AI_MODEL=<id из /v1/models>
 AI_API_KEY=lm-studio
 AI_TIMEOUT_SECONDS=120
+AI_REASONING_EFFORT=none
 ```
+
+Для Qwen3.5 оставьте `AI_REASONING_EFFORT=none`: иначе модель может потратить
+лимит генерации на скрытое рассуждение и не вернуть текст в поле `content`.
+Для модели, которая поддерживает обычный режим без этого параметра, переменную
+можно очистить.
 
 Запускайте FastAPI с этим файлом окружения:
 
@@ -67,6 +73,23 @@ STT_API_KEY=
 STT_TIMEOUT_SECONDS=120
 ```
 
+Для локального запуска без облака можно использовать адаптер из репозитория.
+Он использует кэшируемую модель `Systran/faster-whisper-base` и предоставляет
+тот же endpoint:
+
+```powershell
+cd ai-service
+python -m pip install -r requirements-stt-local.txt
+$env:WHISPER_MODEL = "Systran/faster-whisper-base"
+$env:WHISPER_DEVICE = "cpu"
+$env:WHISPER_COMPUTE_TYPE = "int8"
+python tools/local_whisper_server.py
+```
+
+Для контейнера `ai-service` оставьте `STT_BASE_URL=http://host.docker.internal:9000/v1`;
+для запуска FastAPI непосредственно на хосте используйте
+`http://127.0.0.1:9000/v1`.
+
 В локальном режиме `STT_PROVIDER=mock` сохраняет запуск без скачивания Whisper.
 Файл аудио ограничен 25 MiB по умолчанию; допустимы WAV, MP3, WebM, OGG и M4A.
 Пустой файл или неверный формат дают 422/415, недоступный Whisper — 502.
@@ -81,4 +104,5 @@ STT_TIMEOUT_SECONDS=120
   рабочим запуском соберите и вручную проверьте хотя бы несколько сотен примеров,
   разделив их на `train`, `validation` и `test`.
 - STT требует отдельной Whisper-модели или сервиса, потому что текстовая LLM не
-  принимает аудио как вход.
+  принимает аудио как вход. В репозитории есть локальный faster-whisper-адаптер;
+  его CPU-режим экономит VRAM, но работает медленнее GPU.

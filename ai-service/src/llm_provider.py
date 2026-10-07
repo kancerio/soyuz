@@ -22,12 +22,14 @@ class LMStudioClient:
         model: str,
         api_key: str = "lm-studio",
         timeout: float = 120.0,
+        reasoning_effort: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key = api_key
         self.timeout = timeout
+        self.reasoning_effort = reasoning_effort
         self.transport = transport
 
     async def complete(
@@ -42,6 +44,8 @@ class LMStudioClient:
             "messages": list(messages),
             "temperature": temperature,
         }
+        if self.reasoning_effort:
+            body["reasoning_effort"] = self.reasoning_effort
         if json_mode:
             body["response_format"] = {"type": "json_object"}
 
@@ -59,6 +63,18 @@ class LMStudioClient:
                     json=body,
                     headers=headers,
                 )
+                # Some OpenAI-compatible local servers (including LM Studio
+                # with models that do not advertise JSON mode) reject the
+                # optional response_format field. The prompt still requests
+                # JSON, so retry once without the unsupported hint.
+                if response.status_code == 400 and json_mode:
+                    fallback_body = dict(body)
+                    fallback_body.pop("response_format", None)
+                    response = await client.post(
+                        f"{self.base_url}/chat/completions",
+                        json=fallback_body,
+                        headers=headers,
+                    )
         except httpx.HTTPError as exc:
             raise LLMProviderError(f"LM Studio request failed: {exc}") from exc
 
@@ -150,4 +166,5 @@ def lm_studio_from_env() -> LMStudioClient:
         model=model,
         api_key=os.getenv("AI_API_KEY", "lm-studio"),
         timeout=float(os.getenv("AI_TIMEOUT_SECONDS", "120")),
+        reasoning_effort=(os.getenv("AI_REASONING_EFFORT", "none").strip() or None),
     )

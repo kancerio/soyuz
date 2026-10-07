@@ -101,3 +101,18 @@ def test_summary_reports_invalid_provider_output(monkeypatch):
 
     assert response.status_code == 502
     assert "structured summary" in response.json()["detail"]
+
+
+def test_summary_accepts_json_like_provider_output(monkeypatch):
+    class FakeClient:
+        async def complete(self, messages, **kwargs):
+            return '{summary:"Готово", decisions:["Выполнить"], participants:["u1"]}'
+
+    monkeypatch.setenv("AI_PROVIDER", "lmstudio")
+    monkeypatch.setattr(main, "get_llm_client", lambda: FakeClient())
+
+    response = client.post("/summary", json={"messages": MESSAGES})
+
+    assert response.status_code == 200
+    assert response.json()["summary"] == "Готово"
+    assert response.json()["decisions"] == ["Выполнить"]
