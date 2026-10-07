@@ -49,6 +49,8 @@ pytest tests -v
 По умолчанию `AI_PROVIDER=mock` и `STT_PROVIDER=mock`, поэтому локальный
 запуск не требует внешних сервисов. Для стенда задайте `AI_PROVIDER=lmstudio`
 и укажите `AI_BASE_URL`/`AI_MODEL` из OpenAI-совместимого сервера LM Studio.
+Для Qwen задайте `AI_REASONING_EFFORT=none` и `AI_MAX_TOKENS=512`, чтобы
+ответ не заканчивался внутри скрытого рассуждения или на середине JSON.
 Перевод, `/assist` и `/summary` используют один текстовый провайдер.
 
 LM Studio не принимает аудио. Для `/stt` нужен отдельный Whisper-сервис с

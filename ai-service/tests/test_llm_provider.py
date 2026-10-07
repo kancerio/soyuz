@@ -78,6 +78,27 @@ def test_lm_studio_client_can_disable_reasoning_for_local_models():
     assert seen["body"]["reasoning_effort"] == "none"
 
 
+def test_lm_studio_client_sends_configured_token_budget():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "Готово"}}]},
+        )
+
+    client = LMStudioClient(
+        base_url="http://127.0.0.1:1234/v1",
+        model="qwen3.5-4b",
+        max_tokens=321,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert asyncio.run(client.complete([{"role": "user", "content": "Проверка"}])) == "Готово"
+    assert seen["body"]["max_tokens"] == 321
+
+
 def test_lm_studio_client_retries_json_mode_without_unsupported_format():
     attempts = []
 
@@ -86,6 +107,9 @@ def test_lm_studio_client_retries_json_mode_without_unsupported_format():
         attempts.append(body)
         if len(attempts) == 1:
             return httpx.Response(400, text="response_format is unsupported")
+        if len(attempts) == 2:
+            assert body["response_format"]["type"] == "json_schema"
+            return httpx.Response(400, text="json schema is unsupported")
         return httpx.Response(
             200,
             json={"choices": [{"message": {"content": "{\"summary\":\"Готово\"}"}}]},
@@ -104,4 +128,5 @@ def test_lm_studio_client_retries_json_mode_without_unsupported_format():
 
     assert result == '{"summary":"Готово"}'
     assert "response_format" in attempts[0]
-    assert "response_format" not in attempts[1]
+    assert attempts[1]["response_format"]["type"] == "json_schema"
+    assert "response_format" not in attempts[2]

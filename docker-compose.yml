@@ -37,6 +37,7 @@ services:
       AI_API_KEY: ${AI_API_KEY:-lm-studio}
       AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-120}
       AI_REASONING_EFFORT: ${AI_REASONING_EFFORT:-none}
+      AI_MAX_TOKENS: ${AI_MAX_TOKENS:-512}
       AI_ALLOWED_ORIGINS: ${AI_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       STT_PROVIDER: ${STT_PROVIDER:-mock}
       STT_BASE_URL: ${STT_BASE_URL:-http://host.docker.internal:9000/v1}

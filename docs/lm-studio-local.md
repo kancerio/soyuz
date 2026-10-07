@@ -45,6 +45,7 @@ AI_MODEL=<id из /v1/models>
 AI_API_KEY=lm-studio
 AI_TIMEOUT_SECONDS=120
 AI_REASONING_EFFORT=none
+AI_MAX_TOKENS=512
 ```
 
 Для Qwen3.5 оставьте `AI_REASONING_EFFORT=none`: иначе модель может потратить

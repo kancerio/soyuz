@@ -23,6 +23,7 @@ class LMStudioClient:
         api_key: str = "lm-studio",
         timeout: float = 120.0,
         reasoning_effort: str | None = None,
+        max_tokens: int | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -30,6 +31,7 @@ class LMStudioClient:
         self.api_key = api_key
         self.timeout = timeout
         self.reasoning_effort = reasoning_effort
+        self.max_tokens = max_tokens
         self.transport = transport
 
     async def complete(
@@ -46,6 +48,8 @@ class LMStudioClient:
         }
         if self.reasoning_effort:
             body["reasoning_effort"] = self.reasoning_effort
+        if self.max_tokens is not None and self.max_tokens > 0:
+            body["max_tokens"] = self.max_tokens
         if json_mode:
             body["response_format"] = {"type": "json_object"}
 
@@ -64,17 +68,34 @@ class LMStudioClient:
                     headers=headers,
                 )
                 # Some OpenAI-compatible local servers (including LM Studio
-                # with models that do not advertise JSON mode) reject the
-                # optional response_format field. The prompt still requests
-                # JSON, so retry once without the unsupported hint.
+                # with Qwen models) reject the legacy json_object hint. Try
+                # the newer JSON Schema form before falling back to the
+                # prompt-only request.
                 if response.status_code == 400 and json_mode:
                     fallback_body = dict(body)
-                    fallback_body.pop("response_format", None)
+                    fallback_body["response_format"] = {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "structured_response",
+                            "strict": False,
+                            "schema": {
+                                "type": "object",
+                                "additionalProperties": True,
+                            },
+                        },
+                    }
                     response = await client.post(
                         f"{self.base_url}/chat/completions",
                         json=fallback_body,
                         headers=headers,
                     )
+                    if response.status_code == 400:
+                        fallback_body.pop("response_format", None)
+                        response = await client.post(
+                            f"{self.base_url}/chat/completions",
+                            json=fallback_body,
+                            headers=headers,
+                        )
         except httpx.HTTPError as exc:
             raise LLMProviderError(f"LM Studio request failed: {exc}") from exc
 
@@ -167,4 +188,5 @@ def lm_studio_from_env() -> LMStudioClient:
         api_key=os.getenv("AI_API_KEY", "lm-studio"),
         timeout=float(os.getenv("AI_TIMEOUT_SECONDS", "120")),
         reasoning_effort=(os.getenv("AI_REASONING_EFFORT", "none").strip() or None),
+        max_tokens=int(os.getenv("AI_MAX_TOKENS", "512")),
     )
