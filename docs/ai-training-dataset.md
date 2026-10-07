@@ -70,6 +70,12 @@ python tools/generate_dataset.py --task translate --count 50 --output dataset/ge
 сохраняет строки в Google Drive и помечает их как `deepseek_local`. При нехватке
 памяти можно заменить checkpoint на `DeepSeek-R1-Distill-Qwen-1.5B`.
 
+Для следующего этапа есть отдельный
+[`notebooks/deepseek_qlora_training.ipynb`](../notebooks/deepseek_qlora_training.ipynb).
+Он принимает JSONL, подготовленный `tools/prepare_sft_dataset.py`, и сохраняет
+LoRA-адаптер. Этот адаптер ещё нужно объединить с исходным checkpoint и
+конвертировать в GGUF перед импортом в LM Studio.
+
 ## Источник и разрешения
 
 Seed-примеры составлены из контрактов проекта и не содержат персональных
