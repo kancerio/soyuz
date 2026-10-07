@@ -46,6 +46,12 @@ AI_API_KEY=lm-studio
 AI_TIMEOUT_SECONDS=120
 ```
 
+Запускайте FastAPI с этим файлом окружения:
+
+```powershell
+uvicorn src.main:app --reload --port 8000 --env-file .env
+```
+
 При `AI_PROVIDER=mock` внешних вызовов нет. При ошибке локального провайдера
 эндпоинты возвращают HTTP 502 с понятным описанием причины.
 
