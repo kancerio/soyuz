@@ -52,8 +52,24 @@ AI_TIMEOUT_SECONDS=120
 uvicorn src.main:app --reload --port 8000 --env-file .env
 ```
 
-При `AI_PROVIDER=mock` внешних вызовов нет. При ошибке локального провайдера
-эндпоинты возвращают HTTP 502 с понятным описанием причины.
+При `AI_PROVIDER=mock` внешних вызовов нет. Перевод, `/assist` и `/summary`
+используют один OpenAI-совместимый текстовый endpoint. При ошибке локального
+провайдера endpoint возвращает HTTP 502 с понятным описанием причины.
+
+LM Studio предназначен для текстовой модели и не выполняет распознавание аудио.
+Для рабочего `/stt` задайте отдельный OpenAI-совместимый Whisper-сервис:
+
+```env
+STT_PROVIDER=openai_compatible
+STT_BASE_URL=http://whisper:9000/v1
+STT_MODEL=whisper-1
+STT_API_KEY=
+STT_TIMEOUT_SECONDS=120
+```
+
+В локальном режиме `STT_PROVIDER=mock` сохраняет запуск без скачивания Whisper.
+Файл аудио ограничен 25 MiB по умолчанию; допустимы WAV, MP3, WebM, OGG и M4A.
+Пустой файл или неверный формат дают 422/415, недоступный Whisper — 502.
 
 ## Ограничения текущего этапа
 

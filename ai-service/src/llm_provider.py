@@ -75,6 +75,70 @@ class LMStudioClient:
         return content.strip()
 
 
+class OpenAICompatibleSTTClient:
+    """Call an OpenAI-compatible Whisper transcription endpoint."""
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        model: str,
+        api_key: str = "",
+        timeout: float = 120.0,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.api_key = api_key
+        self.timeout = timeout
+        self.transport = transport
+
+    async def transcribe(
+        self,
+        *,
+        audio: bytes,
+        filename: str,
+        content_type: str,
+        language: str,
+    ) -> str:
+        headers = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        files = {"file": (filename, audio, content_type)}
+        data = {"model": self.model, "language": language}
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.timeout,
+                transport=self.transport,
+            ) as client:
+                response = await client.post(
+                    f"{self.base_url}/audio/transcriptions",
+                    headers=headers,
+                    files=files,
+                    data=data,
+                )
+        except httpx.TimeoutException as exc:
+            raise LLMProviderError("Speech provider timed out") from exc
+        except httpx.HTTPError as exc:
+            raise LLMProviderError(f"Speech provider request failed: {exc}") from exc
+
+        if response.is_error:
+            raise LLMProviderError(
+                f"Speech provider returned HTTP {response.status_code}"
+            )
+
+        try:
+            payload = response.json()
+            transcript = payload["text"]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise LLMProviderError("Speech provider returned an invalid transcript") from exc
+        if not isinstance(transcript, str) or not transcript.strip():
+            raise LLMProviderError("Speech provider returned an empty transcript")
+        return transcript.strip()
+
+
 def lm_studio_from_env() -> LMStudioClient:
     """Build a client from environment variables without loading secrets from logs."""
 

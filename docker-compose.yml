@@ -26,14 +26,25 @@ services:
   ai-service:
     build:
       context: .
-      dockerfile: docker/Dockerfile   # твой Dockerfile
+      dockerfile: docker/Dockerfile.ai
     container_name: messenger-ai
     ports:
-      - "8001:8000"                    # чтобы не конфликтовать с другими, используй 8001
+      - "8000:8000"
     environment:
-      - AI_MOCK_MODE=true
-    volumes:
-      - ./models:/root/.cache/huggingface
+      AI_PROVIDER: ${AI_PROVIDER:-mock}
+      AI_BASE_URL: ${AI_BASE_URL:-http://host.docker.internal:1234/v1}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_API_KEY: ${AI_API_KEY:-lm-studio}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-120}
+      STT_PROVIDER: ${STT_PROVIDER:-mock}
+      STT_BASE_URL: ${STT_BASE_URL:-http://host.docker.internal:9000/v1}
+      STT_MODEL: ${STT_MODEL:-whisper-1}
+      STT_API_KEY: ${STT_API_KEY:-}
+      STT_TIMEOUT_SECONDS: ${STT_TIMEOUT_SECONDS:-120}
+      MAX_AUDIO_BYTES: ${MAX_AUDIO_BYTES:-26214400}
+      MAX_SUMMARY_MESSAGES: ${MAX_SUMMARY_MESSAGES:-100}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - messenger-network
     depends_on:

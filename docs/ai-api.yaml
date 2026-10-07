@@ -46,6 +46,9 @@
               }
             }
           },
+          "502": {
+            "description": "AI provider error"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -78,9 +81,20 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/STTResponse"
+                }
               }
             }
+          },
+          "413": {
+            "description": "Audio payload is too large"
+          },
+          "415": {
+            "description": "Unsupported audio media type"
+          },
+          "502": {
+            "description": "Speech provider error"
           },
           "422": {
             "description": "Validation Error",
@@ -119,6 +133,91 @@
                 }
               }
             }
+          },
+          "502": {
+            "description": "AI provider error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/summarize": {
+      "post": {
+        "summary": "Summarize",
+        "operationId": "summarize_summarize_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SummaryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SummaryResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "AI provider error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/summary": {
+      "post": {
+        "summary": "Summarize",
+        "operationId": "summarize_summary_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SummaryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SummaryResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "AI provider error"
           },
           "422": {
             "description": "Validation Error",
@@ -370,6 +469,45 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "STTResponse": {
+        "properties": {
+          "transcript": {
+            "type": "string",
+            "title": "Transcript"
+          },
+          "recognized_text": {
+            "type": "string",
+            "title": "Recognized Text"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          }
+        },
+        "type": "object",
+        "required": [
+          "transcript",
+          "recognized_text",
+          "language",
+          "provider"
+        ],
+        "title": "STTResponse"
+      },
       "SecretaryRequest": {
         "properties": {
           "action": {
@@ -412,6 +550,95 @@
           "message"
         ],
         "title": "SecretaryResponse"
+      },
+      "SummaryMessage": {
+        "properties": {
+          "sender_id": {
+            "type": "string",
+            "title": "Sender Id"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sender_id",
+          "text"
+        ],
+        "title": "SummaryMessage"
+      },
+      "SummaryRequest": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/SummaryMessage"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "default": "ru"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "title": "SummaryRequest"
+      },
+      "SummaryResponse": {
+        "properties": {
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "decisions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Decisions"
+          },
+          "participants": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Participants"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary",
+          "decisions",
+          "participants",
+          "language",
+          "provider"
+        ],
+        "title": "SummaryResponse"
       },
       "TranslateRequest": {
         "properties": {
