@@ -197,7 +197,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <AIToolsPanel />
+      <AIToolsPanel messages={messages} onTranscript={setNewMessage} />
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
           <div className="text-center text-gray-500">Нет сообщений. Напишите первое!</div>

@@ -6,6 +6,7 @@ from typing import Literal, Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 import uvicorn
@@ -18,6 +19,22 @@ from .llm_provider import (
 
 app = FastAPI(title="AI Service for Messenger", version="0.1.0")
 logger = logging.getLogger("ai-service")
+
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "AI_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 MAX_TEXT_LENGTH = 5000
 MAX_AUDIO_BYTES = int(os.getenv("MAX_AUDIO_BYTES", str(25 * 1024 * 1024)))
