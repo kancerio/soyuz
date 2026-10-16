@@ -72,3 +72,19 @@ export interface Chat {
   isGroup: boolean;
   createdAt: Date;
 }
+
+/** WebSocket: transcript готов / ошибка */
+export type MessageTranscribedPayload = {
+  messageId: number;
+  chatId: number;
+  transcript: string;
+  transcriptStatus: 'completed' | 'failed';
+};
+
+/** WebSocket: voice summary готов / ошибка / не нужен */
+export type MessageVoiceSummaryPayload = {
+  messageId: number;
+  chatId: number;
+  summary: string;
+  summaryStatus: 'completed' | 'failed' | 'not_needed';
+};

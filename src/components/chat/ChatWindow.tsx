@@ -12,7 +12,7 @@ import GroupMembersModal from './GroupMembersModal';
 import TranslationBlock from './TranslationBlock';
 import RewritePanel, { RewriteAction, RewriteState } from './RewritePanel';
 import LoadingState from '@/components/ui/LoadingState';
-import { Message } from '@/types/chat';
+import { Message, MessageTranscribedPayload, MessageVoiceSummaryPayload} from '@/types/chat';
 import VoiceComposer, { VoiceDraft } from './VoiceComposer';
 import AudioPlayer from './AudioPlayer';
 import VoiceTranscript from './VoiceTranscript';
@@ -163,6 +163,46 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       );
     };
 
+    const handleMessageTranscribed = (data: {
+      messageId: number;
+      chatId: number;
+      transcript: string;
+      transcriptStatus: 'completed' | 'failed';
+    }) => {
+      if (Number(data.chatId) !== chatIdNum) return;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === data.messageId
+            ? {
+                ...m,
+                transcript: data.transcript,
+                transcriptStatus: data.transcriptStatus,
+              }
+            : m
+        )
+      );
+    };
+
+    const handleMessageVoiceSummary = (data: {
+      messageId: number;
+      chatId: number;
+      summary: string;
+      summaryStatus: 'completed' | 'failed' | 'not_needed';
+    }) => {
+      if (Number(data.chatId) !== chatIdNum) return;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === data.messageId
+            ? {
+                ...m,
+                summary: data.summary,
+                summaryStatus: data.summaryStatus,
+              }
+            : m
+        )
+      );
+    };
+
     const handleMessageUpdated = (data: { id: number; content: string }) => {
       setMessages((prev) =>
         prev.map((m) =>
@@ -181,6 +221,8 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
 
     socket.on('new_message', handleNewMessage);
     socket.on('message_translated', handleMessageTranslated);
+    socket.on('message_transcribed', handleMessageTranscribed);
+    socket.on('message_voice_summary', handleMessageVoiceSummary);
     socket.on('message_updated', handleMessageUpdated);
     socket.on('message_deleted', handleMessageDeleted);
 
@@ -188,6 +230,8 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       socket.emit('leave_chat', { chatId: chatIdNum });
       socket.off('new_message', handleNewMessage);
       socket.off('message_translated', handleMessageTranslated);
+      socket.off('message_transcribed', handleMessageTranscribed);
+      socket.off('message_voice_summary', handleMessageVoiceSummary);
       socket.off('message_updated', handleMessageUpdated);
       socket.off('message_deleted', handleMessageDeleted);
     };
