@@ -13,6 +13,7 @@ import TranslationBlock from './TranslationBlock';
 import RewritePanel, { RewriteAction, RewriteState } from './RewritePanel';
 import LoadingState from '@/components/ui/LoadingState';
 import { Message } from '@/types/chat';
+import VoiceComposer, { VoiceDraft } from './VoiceComposer';
 
 interface ChatWindowProps {
   chatId: string;
@@ -56,6 +57,8 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
   const { isConnected } = useSocketStatus();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [showVoiceComposer, setShowVoiceComposer] = useState(false);
+  const [voiceDraft, setVoiceDraft] = useState<VoiceDraft | null>(null);
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatIdNum = parseInt(chatId, 10);
@@ -426,21 +429,54 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
 
       {/* Форма отправки */}
       <form onSubmit={handleSend} className="p-4">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder={t('type_message')}
-            className="flex-1 px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
+        {showVoiceComposer ? (
+          <VoiceComposer
+            disabled={false}
+            onReady={(draft) => {
+              // Пока только сохраняем draft; отправку сделаем в задаче 3
+              // newMessage НЕ трогаем — текстовый черновик остаётся
+              setVoiceDraft(draft);
+              console.log('[voice] draft ready', {
+                durationMs: draft.durationMs,
+                size: draft.sizeBytes,
+                source: draft.source,
+              });
+              setShowVoiceComposer(false);
+            }}
+            onCancel={() => {
+              if (voiceDraft?.localUrl) {
+                URL.revokeObjectURL(voiceDraft.localUrl);
+              }
+              setVoiceDraft(null);
+              setShowVoiceComposer(false);
+            }}
           />
-          <button
-            type="submit"
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-          >
-            {t('send')}
-          </button>
-        </div>
+        ) : (
+          <div className="flex gap-2 items-center">
+            <button
+              type="button"
+              onClick={() => setShowVoiceComposer(true)}
+              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
+              title="Голосовое сообщение"
+              aria-label="Голосовое сообщение"
+            >
+              🎤
+            </button>
+            <input
+              type="text"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              placeholder={t('type_message')}
+              className="flex-1 px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 shrink-0"
+            >
+              {t('send')}
+            </button>
+          </div>
+        )}
       </form>
 
       {/* Модалка участников */}
