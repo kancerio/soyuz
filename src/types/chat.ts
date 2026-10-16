@@ -55,13 +55,20 @@ export interface Message {
   localStatus?: 'sending' | 'sent' | 'delivered' | 'read';
 
   // --- Voice ---
-  type?: MessageType; // default 'text'
+  type?: MessageType;
   audioUrl?: string | null;
-  localAudioUrl?: string | null; // blob: для optimistic UI
+  localAudioUrl?: string | null;
   transcript?: string | null;
   transcriptStatus?: TranscriptStatus;
   summary?: string | null;
   summaryStatus?: SummaryStatus;
   voiceMetadata?: VoiceMetadata | null;
   uploadStatus?: UploadStatus;
+}
+
+export interface Chat {
+  id: number;
+  title: string | null;
+  isGroup: boolean;
+  createdAt: Date;
 }

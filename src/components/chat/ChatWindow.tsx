@@ -14,6 +14,7 @@ import RewritePanel, { RewriteAction, RewriteState } from './RewritePanel';
 import LoadingState from '@/components/ui/LoadingState';
 import { Message } from '@/types/chat';
 import VoiceComposer, { VoiceDraft } from './VoiceComposer';
+import AudioPlayer from './AudioPlayer';
 
 interface ChatWindowProps {
   chatId: string;
@@ -21,20 +22,28 @@ interface ChatWindowProps {
 
 function mergeMessages(prev: Message[], incoming: Message[]): Message[] {
   const map = new Map<number, Message>();
-  prev.forEach(m => map.set(m.id, m));
+  prev.forEach((m) => map.set(m.id, m));
 
-  incoming.forEach(m => {
+  incoming.forEach((m) => {
     const existing = map.get(m.id);
     if (existing) {
       map.set(m.id, {
         ...existing,
         ...m,
-        // сохраняем AI-поля, если backend не прислал
         translatedText: m.translatedText ?? existing.translatedText,
         translateStatus: m.translateStatus ?? existing.translateStatus,
         sourceLang: m.sourceLang ?? existing.sourceLang,
         targetLang: m.targetLang ?? existing.targetLang,
-        // локальный статус отправки не перетирается
+        // voice
+        type: m.type ?? existing.type,
+        audioUrl: m.audioUrl ?? existing.audioUrl,
+        localAudioUrl: m.localAudioUrl ?? existing.localAudioUrl,
+        transcript: m.transcript ?? existing.transcript,
+        transcriptStatus: m.transcriptStatus ?? existing.transcriptStatus,
+        summary: m.summary ?? existing.summary,
+        summaryStatus: m.summaryStatus ?? existing.summaryStatus,
+        voiceMetadata: m.voiceMetadata ?? existing.voiceMetadata,
+        uploadStatus: m.uploadStatus ?? existing.uploadStatus,
         localStatus:
           existing.localStatus === 'sending'
             ? m.localStatus
@@ -61,6 +70,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
   const [voiceDraft, setVoiceDraft] = useState<VoiceDraft | null>(null);
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const voiceAbortRef = useRef<Map<number, AbortController>>(new Map());
   const chatIdNum = parseInt(chatId, 10);
   const [chatInfo, setChatInfo] = useState<{ title: string | null; isGroup: boolean } | null>(null);
   const [membersMap, setMembersMap] = useState<Map<number, string>>(new Map());
@@ -124,11 +134,17 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         targetLang: msg.targetLang ?? null,
         translateStatus: msg.translateStatus ?? 'skipped',
         localStatus: msg.userId === user.id ? 'read' : 'delivered',
+        type: msg.type ?? 'text',
+        audioUrl: msg.audioUrl ?? null,
+        transcript: msg.transcript ?? null,
+        transcriptStatus: msg.transcriptStatus ?? undefined,
+        summary: msg.summary ?? null,
+        summaryStatus: msg.summaryStatus ?? undefined,
+        voiceMetadata: msg.voiceMetadata ?? null,
       };
-      setMessages(prev => mergeMessages(prev, [incoming]));
+      setMessages((prev) => mergeMessages(prev, [incoming]));
     };
 
-    // 🎯 Новое событие — перевод готов
     const handleMessageTranslated = (data: {
       messageId: number;
       chatId: number;
@@ -136,8 +152,8 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       translateStatus: 'completed' | 'failed';
     }) => {
       if (Number(data.chatId) !== chatIdNum) return;
-      setMessages(prev =>
-        prev.map(m =>
+      setMessages((prev) =>
+        prev.map((m) =>
           m.id === data.messageId
             ? {
                 ...m,
@@ -150,16 +166,16 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     };
 
     const handleMessageUpdated = (data: { id: number; content: string }) => {
-      setMessages(prev =>
-        prev.map(m =>
+      setMessages((prev) =>
+        prev.map((m) =>
           m.id === data.id ? { ...m, content: data.content, isEdited: true } : m
         )
       );
     };
 
     const handleMessageDeleted = (data: { id: number }) => {
-      setMessages(prev =>
-        prev.map(m =>
+      setMessages((prev) =>
+        prev.map((m) =>
           m.id === data.id ? { ...m, content: '[Удалено]', isDeleted: true } : m
         )
       );
@@ -185,7 +201,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       setLoading(true);
       try {
         const data = await apiClient.getMessages(chatIdNum);
-        setMessages(prev => mergeMessages(prev, data));
+        setMessages((prev) => mergeMessages(prev, data));
       } catch (error) {
         console.error('Failed to load messages:', error);
       } finally {
@@ -199,7 +215,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Отправка — с автоматическим переводом на язык пользователя
+  // Отправка текста
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
@@ -219,8 +235,9 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       translatedText: null,
       translateStatus: 'pending',
       localStatus: 'sending',
+      type: 'text',
     };
-    setMessages(prev => mergeMessages(prev, [tempMessage]));
+    setMessages((prev) => mergeMessages(prev, [tempMessage]));
 
     let fallbackTimer: NodeJS.Timeout;
     const socket = getSocket();
@@ -230,8 +247,8 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       if (msg.userId === user?.id && msg.content === content && msg.chatId === chatIdNum) {
         cleanupFallback();
         socket?.off('new_message', onNewMessageConfirm);
-        setMessages(prev =>
-          prev.map(m =>
+        setMessages((prev) =>
+          prev.map((m) =>
             m.id === tempId
               ? {
                   ...m,
@@ -243,13 +260,13 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
           )
         );
         setTimeout(() => {
-          setMessages(prev =>
-            prev.map(m => (m.id === msg.id ? { ...m, localStatus: 'delivered' } : m))
+          setMessages((prev) =>
+            prev.map((m) => (m.id === msg.id ? { ...m, localStatus: 'delivered' } : m))
           );
         }, 1000);
         setTimeout(() => {
-          setMessages(prev =>
-            prev.map(m => (m.id === msg.id ? { ...m, localStatus: 'read' } : m))
+          setMessages((prev) =>
+            prev.map((m) => (m.id === msg.id ? { ...m, localStatus: 'read' } : m))
           );
         }, 3000);
       }
@@ -260,7 +277,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       socket?.off('new_message', onNewMessageConfirm);
       try {
         const fresh = await apiClient.getMessages(chatIdNum);
-        setMessages(prev => mergeMessages(prev, fresh));
+        setMessages((prev) => mergeMessages(prev, fresh));
       } catch (err) {
         console.error('Fallback failed:', err);
       }
@@ -272,17 +289,186 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       console.error('Failed to send message:', error);
       cleanupFallback();
       socket?.off('new_message', onNewMessageConfirm);
-      setMessages(prev => prev.filter(m => m.id !== tempId));
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }
+  };
+
+  // --- Voice: отправка (mock) ---
+  const handleVoiceReady = async (draft: VoiceDraft) => {
+    // текстовый черновик newMessage НЕ трогаем
+    const tempId = -Date.now();
+
+    const voiceMessage: Message = {
+      id: tempId,
+      content: '',
+      senderId: user?.id ?? 0,
+      chatId: chatIdNum,
+      timestamp: new Date(),
+      type: 'voice',
+      localAudioUrl: draft.localUrl,
+      audioUrl: null,
+      transcript: null,
+      transcriptStatus: 'pending',
+      summary: null,
+      summaryStatus: 'not_needed',
+      voiceMetadata: {
+        durationMs: draft.durationMs,
+        mimeType: draft.mimeType,
+        sizeBytes: draft.sizeBytes,
+      },
+      uploadStatus: 'uploading',
+      localStatus: 'sending',
+    };
+
+    setMessages((prev) => mergeMessages(prev, [voiceMessage]));
+    setVoiceDraft(null);
+    setShowVoiceComposer(false);
+
+    const controller = new AbortController();
+    voiceAbortRef.current.set(tempId, controller);
+
+    try {
+      if (controller.signal.aborted) return;
+
+      const result = await apiClient.sendVoiceMessage(chatIdNum, draft.blob, {
+        durationMs: draft.durationMs,
+        mimeType: draft.mimeType,
+      });
+
+      if (controller.signal.aborted) return;
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId
+            ? {
+                ...m,
+                id: result.id,
+                audioUrl: result.audioUrl || draft.localUrl,
+                uploadStatus: 'uploaded',
+                localStatus: 'sent',
+                transcriptStatus: 'processing',
+              }
+            : m
+        )
+      );
+    } catch (err: any) {
+      if (controller.signal.aborted) return;
+      console.error('Voice upload failed', err);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId
+            ? { ...m, uploadStatus: 'error', localStatus: undefined }
+            : m
+        )
+      );
+    } finally {
+      voiceAbortRef.current.delete(tempId);
+    }
+  };
+
+  const handleVoiceCancelUpload = (messageId: number) => {
+    const controller = voiceAbortRef.current.get(messageId);
+    controller?.abort();
+    voiceAbortRef.current.delete(messageId);
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId
+          ? { ...m, uploadStatus: 'cancelled', localStatus: undefined }
+          : m
+      )
+    );
+  };
+
+  const handleVoiceRetry = async (msg: Message) => {
+    if (!msg.localAudioUrl && !msg.audioUrl) return;
+
+    let blob: Blob;
+    try {
+      const url = msg.localAudioUrl || msg.audioUrl!;
+      const res = await fetch(url);
+      blob = await res.blob();
+    } catch {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === msg.id ? { ...m, uploadStatus: 'error' } : m))
+      );
+      return;
+    }
+
+    const meta = msg.voiceMetadata ?? {
+      durationMs: 0,
+      mimeType: blob.type || 'audio/webm',
+      sizeBytes: blob.size,
+    };
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === msg.id
+          ? { ...m, uploadStatus: 'uploading', localStatus: 'sending' }
+          : m
+      )
+    );
+
+    const controller = new AbortController();
+    voiceAbortRef.current.set(msg.id, controller);
+
+    try {
+      const result = await apiClient.sendVoiceMessage(chatIdNum, blob, {
+        durationMs: meta.durationMs,
+        mimeType: meta.mimeType,
+      });
+      if (controller.signal.aborted) return;
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msg.id
+            ? {
+                ...m,
+                id: result.id,
+                audioUrl: result.audioUrl || msg.localAudioUrl || null,
+                uploadStatus: 'uploaded',
+                localStatus: 'sent',
+                transcriptStatus: 'processing',
+              }
+            : m
+        )
+      );
+    } catch {
+      if (controller.signal.aborted) return;
+      setMessages((prev) =>
+        prev.map((m) => (m.id === msg.id ? { ...m, uploadStatus: 'error' } : m))
+      );
+    } finally {
+      voiceAbortRef.current.delete(msg.id);
+    }
+  };
+
+  const handleVoiceRemoveCancelled = (messageId: number) => {
+    setMessages((prev) => {
+      const target = prev.find((m) => m.id === messageId);
+      if (target?.localAudioUrl) {
+        try {
+          URL.revokeObjectURL(target.localAudioUrl);
+        } catch {
+          // ignore
+        }
+      }
+      return prev.filter((m) => m.id !== messageId);
+    });
   };
 
   const getStatusIcon = (status?: string) => {
     switch (status) {
-      case 'sending': return '⏳';
-      case 'sent': return '✓';
-      case 'delivered': return '✓✓';
-      case 'read': return '✓✓✓';
-      default: return '';
+      case 'sending':
+        return '⏳';
+      case 'sent':
+        return '✓';
+      case 'delivered':
+        return '✓✓';
+      case 'read':
+        return '✓✓✓';
+      default:
+        return '';
     }
   };
 
@@ -292,7 +478,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     return '';
   };
 
-  const refreshRoles = () => setMembersModalKey(prev => prev + 1);
+  const refreshRoles = () => setMembersModalKey((prev) => prev + 1);
 
   // AI-rewrite
   const handleAssist = async (action: RewriteAction) => {
@@ -349,7 +535,9 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       {/* Верхняя панель */}
       <div className="p-2 border-b dark:border-gray-700 flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></span>
+          <span
+            className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
+          />
           <span className="text-sm">{isConnected ? 'Online' : 'Offline'}</span>
         </div>
         <div className="flex items-center gap-3">
@@ -383,7 +571,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         {messages.length === 0 && (
           <div className="text-center text-gray-500">Нет сообщений. Напишите первое!</div>
         )}
-        {messages.map(msg => (
+        {messages.map((msg) => (
           <div
             key={msg.id}
             className={`flex ${msg.senderId === user?.id ? 'justify-end' : 'justify-start'}`}
@@ -395,14 +583,71 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                   : 'bg-gray-200 dark:bg-gray-700'
               }`}
             >
-              <p>
-                {msg.senderId !== user?.id && (
-                  <span className="font-semibold">
-                    {getRoleSymbol(membersMap.get(msg.senderId))}
-                  </span>
-                )}
-                {msg.isDeleted ? '[Удалено]' : msg.content}
-              </p>
+              {msg.senderId !== user?.id && (
+                <div className="font-semibold text-sm mb-1">
+                  {getRoleSymbol(membersMap.get(msg.senderId))}
+                </div>
+              )}
+
+              {msg.isDeleted ? (
+                <p>[Удалено]</p>
+              ) : msg.type === 'voice' ? (
+                <div className="space-y-2 min-w-[200px]">
+                  <AudioPlayer
+                    src={msg.localAudioUrl || msg.audioUrl}
+                    durationMs={msg.voiceMetadata?.durationMs}
+                    compact
+                  />
+
+                  {msg.uploadStatus === 'uploading' && (
+                    <div className="flex items-center justify-between text-xs opacity-80">
+                      <span>Отправка…</span>
+                      <button
+                        type="button"
+                        onClick={() => handleVoiceCancelUpload(msg.id)}
+                        className="underline hover:opacity-100"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  )}
+
+                  {msg.uploadStatus === 'error' && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-red-300">Ошибка загрузки</span>
+                      <button
+                        type="button"
+                        onClick={() => handleVoiceRetry(msg)}
+                        className="underline"
+                      >
+                        Повторить
+                      </button>
+                    </div>
+                  )}
+
+                  {msg.uploadStatus === 'cancelled' && (
+                    <div className="flex items-center gap-2 text-xs opacity-80">
+                      <span>Отменено</span>
+                      <button
+                        type="button"
+                        onClick={() => handleVoiceRetry(msg)}
+                        className="underline"
+                      >
+                        Отправить снова
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleVoiceRemoveCancelled(msg.id)}
+                        className="underline"
+                      >
+                        Удалить
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p>{msg.content}</p>
+              )}
 
               <div className="text-xs opacity-70 mt-1 flex justify-end gap-1">
                 <span>{msg.timestamp.toLocaleTimeString()}</span>
@@ -410,7 +655,9 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                 {msg.isEdited && <span>(ред.)</span>}
               </div>
 
-              <TranslationBlock message={msg} isOwn={msg.senderId === user?.id} />
+              {msg.type !== 'voice' && (
+                <TranslationBlock message={msg} isOwn={msg.senderId === user?.id} />
+              )}
             </div>
           </div>
         ))}
@@ -432,17 +679,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         {showVoiceComposer ? (
           <VoiceComposer
             disabled={false}
-            onReady={(draft) => {
-              // Пока только сохраняем draft; отправку сделаем в задаче 3
-              // newMessage НЕ трогаем — текстовый черновик остаётся
-              setVoiceDraft(draft);
-              console.log('[voice] draft ready', {
-                durationMs: draft.durationMs,
-                size: draft.sizeBytes,
-                source: draft.source,
-              });
-              setShowVoiceComposer(false);
-            }}
+            onReady={handleVoiceReady}
             onCancel={() => {
               if (voiceDraft?.localUrl) {
                 URL.revokeObjectURL(voiceDraft.localUrl);
