@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException
-from app.schemas.request import TranslateRequest
-from app.schemas.response import TranslateResponse
-from app.services.translation_service import translate_text
-from app.core.logging import get_logger
+from app_ai.schemas.request import TranslateRequest
+from app_ai.schemas.response import TranslateResponse
+from app_ai.services.translation_service import translate_text
+from app_ai.core.logging import get_logger
 
 router = APIRouter()
 logger = get_logger(__name__)
