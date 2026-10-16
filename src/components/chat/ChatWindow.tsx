@@ -15,6 +15,7 @@ import LoadingState from '@/components/ui/LoadingState';
 import { Message } from '@/types/chat';
 import VoiceComposer, { VoiceDraft } from './VoiceComposer';
 import AudioPlayer from './AudioPlayer';
+import VoiceTranscript from './VoiceTranscript';
 
 interface ChatWindowProps {
   chatId: string;
@@ -34,7 +35,6 @@ function mergeMessages(prev: Message[], incoming: Message[]): Message[] {
         translateStatus: m.translateStatus ?? existing.translateStatus,
         sourceLang: m.sourceLang ?? existing.sourceLang,
         targetLang: m.targetLang ?? existing.targetLang,
-        // voice
         type: m.type ?? existing.type,
         audioUrl: m.audioUrl ?? existing.audioUrl,
         localAudioUrl: m.localAudioUrl ?? existing.localAudioUrl,
@@ -80,7 +80,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
 
   const targetLanguage = (user?.language || 'en').toLowerCase();
 
-  // Информация о чате
   useEffect(() => {
     const fetchChatInfo = async () => {
       try {
@@ -93,7 +92,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     fetchChatInfo();
   }, [chatIdNum]);
 
-  // Участники группы
   useEffect(() => {
     if (!chatInfo?.isGroup) return;
     const fetchMembers = async () => {
@@ -109,7 +107,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     fetchMembers();
   }, [chatInfo?.isGroup, chatIdNum, membersModalKey]);
 
-  // WebSocket
   useEffect(() => {
     if (!user) return;
     const socket = initSocket(user.id);
@@ -195,7 +192,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     };
   }, [chatIdNum, user]);
 
-  // История
   useEffect(() => {
     const fetchMessages = async () => {
       setLoading(true);
@@ -215,7 +211,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Отправка текста
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
@@ -293,9 +288,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     }
   };
 
-  // --- Voice: отправка (mock) ---
   const handleVoiceReady = async (draft: VoiceDraft) => {
-    // текстовый черновик newMessage НЕ трогаем
     const tempId = -Date.now();
 
     const voiceMessage: Message = {
@@ -351,6 +344,23 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
             : m
         )
       );
+
+      // mock STT
+      const finalId = result.id;
+      setTimeout(() => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === finalId
+              ? {
+                  ...m,
+                  transcript:
+                    '[mock] Пример распознанного текста голосового сообщения.',
+                  transcriptStatus: 'completed',
+                }
+              : m
+          )
+        );
+      }, 2000);
     } catch (err: any) {
       if (controller.signal.aborted) return;
       console.error('Voice upload failed', err);
@@ -433,6 +443,22 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
             : m
         )
       );
+
+      const finalId = result.id;
+      setTimeout(() => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === finalId
+              ? {
+                  ...m,
+                  transcript:
+                    '[mock] Пример распознанного текста голосового сообщения.',
+                  transcriptStatus: 'completed',
+                }
+              : m
+          )
+        );
+      }, 2000);
     } catch {
       if (controller.signal.aborted) return;
       setMessages((prev) =>
@@ -480,7 +506,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
 
   const refreshRoles = () => setMembersModalKey((prev) => prev + 1);
 
-  // AI-rewrite
   const handleAssist = async (action: RewriteAction) => {
     const draft = newMessage.trim();
     if (!draft) return;
@@ -532,7 +557,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     <div className="flex flex-col h-full">
       <AIToolsPanel />
 
-      {/* Верхняя панель */}
       <div className="p-2 border-b dark:border-gray-700 flex justify-between items-center">
         <div className="flex items-center gap-2">
           <span
@@ -555,7 +579,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         </div>
       </div>
 
-      {/* Заголовок группы */}
       {chatInfo?.isGroup && (
         <div
           onClick={() => setShowMembersModal(true)}
@@ -566,7 +589,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         </div>
       )}
 
-      {/* Сообщения */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
           <div className="text-center text-gray-500">Нет сообщений. Напишите первое!</div>
@@ -644,6 +666,12 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                       </button>
                     </div>
                   )}
+
+                  <VoiceTranscript
+                    transcript={msg.transcript}
+                    status={msg.transcriptStatus}
+                    isOwn={msg.senderId === user?.id}
+                  />
                 </div>
               ) : (
                 <p>{msg.content}</p>
@@ -664,7 +692,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* AI-rewrite */}
       <RewritePanel
         draft={newMessage}
         state={rewrite}
@@ -674,7 +701,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         onRetry={retryRewrite}
       />
 
-      {/* Форма отправки */}
       <form onSubmit={handleSend} className="p-4">
         {showVoiceComposer ? (
           <VoiceComposer
@@ -716,7 +742,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         )}
       </form>
 
-      {/* Модалка участников */}
       {chatInfo?.isGroup && (
         <GroupMembersModal
           key={membersModalKey}
