@@ -16,6 +16,7 @@ import { Message } from '@/types/chat';
 import VoiceComposer, { VoiceDraft } from './VoiceComposer';
 import AudioPlayer from './AudioPlayer';
 import VoiceTranscript from './VoiceTranscript';
+import VoiceSummary from './VoiceSummary';
 
 interface ChatWindowProps {
   chatId: string;
@@ -345,21 +346,52 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         )
       );
 
-      // mock STT
       const finalId = result.id;
+      const durationMs = draft.durationMs;
+
       setTimeout(() => {
+        const mockTranscript =
+          durationMs > 60_000
+            ? (
+                '[mock] ' +
+                'Это длинное голосовое сообщение для проверки summary. '.repeat(20)
+              ).trim()
+            : '[mock] Пример распознанного текста голосового сообщения.';
+
+        const needSummary =
+          durationMs > 60_000 || mockTranscript.length > 250;
+
         setMessages((prev) =>
           prev.map((m) =>
             m.id === finalId
               ? {
                   ...m,
-                  transcript:
-                    '[mock] Пример распознанного текста голосового сообщения.',
-                  transcriptStatus: 'completed',
+                  transcript: mockTranscript,
+                  transcriptStatus: 'completed' as const,
+                  summaryStatus: needSummary
+                    ? ('processing' as const)
+                    : ('not_needed' as const),
                 }
               : m
           )
         );
+
+        if (needSummary) {
+          setTimeout(() => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === finalId
+                  ? {
+                      ...m,
+                      summary:
+                        '[mock] Кратко: основное содержание голосового сообщения.',
+                      summaryStatus: 'completed' as const,
+                    }
+                  : m
+              )
+            );
+          }, 1500);
+        }
       }, 2000);
     } catch (err: any) {
       if (controller.signal.aborted) return;
@@ -445,19 +477,51 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       );
 
       const finalId = result.id;
+      const durationMs = meta.durationMs;
+
       setTimeout(() => {
+        const mockTranscript =
+          durationMs > 60_000
+            ? (
+                '[mock] ' +
+                'Это длинное голосовое сообщение для проверки summary. '.repeat(20)
+              ).trim()
+            : '[mock] Пример распознанного текста голосового сообщения.';
+
+        const needSummary =
+          durationMs > 60_000 || mockTranscript.length > 250;
+
         setMessages((prev) =>
           prev.map((m) =>
             m.id === finalId
               ? {
                   ...m,
-                  transcript:
-                    '[mock] Пример распознанного текста голосового сообщения.',
-                  transcriptStatus: 'completed',
+                  transcript: mockTranscript,
+                  transcriptStatus: 'completed' as const,
+                  summaryStatus: needSummary
+                    ? ('processing' as const)
+                    : ('not_needed' as const),
                 }
               : m
           )
         );
+
+        if (needSummary) {
+          setTimeout(() => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === finalId
+                  ? {
+                      ...m,
+                      summary:
+                        '[mock] Кратко: основное содержание голосового сообщения.',
+                      summaryStatus: 'completed' as const,
+                    }
+                  : m
+              )
+            );
+          }, 1500);
+        }
       }, 2000);
     } catch {
       if (controller.signal.aborted) return;
@@ -670,6 +734,12 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                   <VoiceTranscript
                     transcript={msg.transcript}
                     status={msg.transcriptStatus}
+                    isOwn={msg.senderId === user?.id}
+                  />
+
+                  <VoiceSummary
+                    summary={msg.summary}
+                    status={msg.summaryStatus}
                     isOwn={msg.senderId === user?.id}
                   />
                 </div>

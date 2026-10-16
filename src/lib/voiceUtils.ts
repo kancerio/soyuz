@@ -13,6 +13,18 @@ export const SUPPORTED_MIME_TYPES = [
 
 export const MAX_DURATION_MS = 3 * 60 * 1000; // 3 минуты
 export const MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 МБ
+export const SUMMARY_MIN_TRANSCRIPT_CHARS = 250;
+export const SUMMARY_MIN_DURATION_MS = 60_000;
+
+export function shouldGenerateSummary(
+  durationMs: number,
+  transcriptLength: number
+): boolean {
+  return (
+    durationMs > SUMMARY_MIN_DURATION_MS ||
+    transcriptLength > SUMMARY_MIN_TRANSCRIPT_CHARS
+  );
+}
 
 export function getPreferredMimeType(): string {
   if (typeof MediaRecorder === 'undefined') return 'audio/webm';
