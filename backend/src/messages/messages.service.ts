@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Message } from './message.entity';
 import { UsersService } from '../users/users.service';
+import { ChatsService } from '../chats/chats.service';
 import { TranslationService, AssistResult } from '../translation/translation.service';
 
 @Injectable()
@@ -12,6 +13,8 @@ export class MessagesService {
     @InjectRepository(Message)
     private messagesRepository: Repository<Message>,
     private usersService: UsersService,
+    @Inject(forwardRef(() => ChatsService))
+    private chatsService: ChatsService,
     private translationService: TranslationService,
     private eventEmitter: EventEmitter2,
   ) {}
@@ -22,22 +25,18 @@ export class MessagesService {
       order: { createdAt: 'ASC' },
       skip: offset,
       take: limit,
+      relations: ['user'],
     });
   }
 
-  async sendMessage(chatId: number, userId: number, content: string): Promise<Message> {
-    const user = await this.usersService.findOne(userId);
-    if (!user) {
-      throw new NotFoundException('Пользователь не найден');
-    }
-
-    const message = this.messagesRepository.create({
-      content,
-      userId,
-      chatId,
-    });
-
-    return this.messagesRepository.save(message);
+  async sendMessage(
+    chatId: number,
+    userId: number,
+    content: string,
+    sourceLang: string = 'auto',
+    targetLang?: string,
+  ): Promise<Message> {
+    return this.sendMessageWithTranslation(chatId, userId, content, sourceLang, targetLang);
   }
 
   async sendMessageWithTranslation(
@@ -45,26 +44,54 @@ export class MessagesService {
     userId: number,
     content: string,
     sourceLang: string = 'auto',
-    targetLang: string = 'en',
+    targetLang?: string,
   ): Promise<Message> {
-    // 1. Сохраняем оригинал
+    // 1. Проверяем участие в чате (единый источник истины)
+    const isParticipant = await this.chatsService.isParticipant(chatId, userId);
+    if (!isParticipant) {
+      throw new ForbiddenException('Вы не являетесь участником этого чата');
+    }
+
+    const user = await this.usersService.findOne(userId);
+    if (!user) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+
+    // 2. Определяем корректный targetLang
+    let resolvedTargetLang = targetLang;
+    if (!resolvedTargetLang || resolvedTargetLang === 'auto') {
+      const members = await this.chatsService.getChatMembers(chatId);
+      const otherMember = members.find((m) => m.userId !== userId);
+      resolvedTargetLang = otherMember?.user?.preferred_language || 'en';
+    }
+
+    // 3. Сохраняем оригинал сообщения
     const message = this.messagesRepository.create({
       content,
       originalText: content,
-      sourceLang,
-      targetLang,
+      sourceLang: sourceLang || 'auto',
+      targetLang: resolvedTargetLang,
       userId,
       chatId,
       translateStatus: 'pending',
+      isDelivered: true,
     });
 
     const saved = await this.messagesRepository.save(message);
 
-    // 2. Запускаем перевод в фоне (не ждём)
-    this.translateInBackground(saved.id, content, sourceLang, targetLang);
+    const fullMessage = (await this.messagesRepository.findOne({
+      where: { id: saved.id },
+      relations: ['user'],
+    })) || saved;
 
-    // 3. Сразу возвращаем сообщение с оригиналом
-    return saved;
+    // 4. Отправляем единое событие создания сообщения для realtime-рассылки в WebSocket
+    this.eventEmitter.emit('message.created', fullMessage);
+
+    // 5. Запускаем перевод в фоне (ошибка AI не ломает сообщение)
+    this.translateInBackground(saved.id, content, sourceLang || 'auto', resolvedTargetLang);
+
+    // 6. Сразу возвращаем созданное сообщение
+    return fullMessage;
   }
 
   private async translateInBackground(

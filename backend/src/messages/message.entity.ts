@@ -56,7 +56,7 @@ export class Message {
   @Column({ type: 'text', nullable: true })
   translatedText: string;
 
-  @Column({ type: 'varchar', length: 2, nullable: true })
+  @Column({ type: 'varchar', length: 10, nullable: true })
   targetLang: string;
 
   @Column({ type: 'varchar', length: 20, default: 'pending' })

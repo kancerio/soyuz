@@ -10,6 +10,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { ChatsService } from './chats.service';
 import { MessagesService } from '../messages/messages.service';
+import { Message } from '../messages/message.entity';
 import { logger } from '../common/logger';
 import { OnEvent } from '@nestjs/event-emitter';
 
@@ -224,53 +225,39 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('send_message')
   async handleSendMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { chatId: number; content: string },
+    @MessageBody() data: { chatId: number; content: string; sourceLang?: string; targetLang?: string },
   ) {
     const startTime = Date.now();
-    const { chatId, content } = data;
+    const { chatId, content, sourceLang, targetLang } = data;
     const userId = this.socketToUser.get(client.id);
-    
+
     if (!userId) {
       client.emit('error', { message: 'Not authenticated' });
       return;
     }
-    
-    const isParticipant = await this.chatsService.isParticipant(chatId, userId);
-    if (!isParticipant) {
-      client.emit('error', { message: 'You are not a participant of this chat' });
-      return;
-    }
-    
+
     try {
-      // Сохраняем сообщение с переводом (перевод в фоне)
+      // Сохранение, валидация участника и рассылка new_message через единое событие message.created
       const message = await this.messagesService.sendMessageWithTranslation(
         chatId,
         userId,
         content,
-        'auto',
-        'en',
+        sourceLang,
+        targetLang,
       );
-      
-      await this.messagesService.markAsDelivered(message.id, userId);
-      
-      const dbSaveTime = Date.now() - startTime;
-      
-      // Рассылаем сообщение всем в комнате (с оригиналом, перевод придёт позже)
-      this.server.to(`chat_${chatId}`).emit('new_message', message);
-      
+
       const totalTime = Date.now() - startTime;
-      
-      logger.info('Message sent', {
+      logger.info('Message sent via WebSocket', {
         event: 'send_message',
         message_id: message.id,
         user_id: userId,
         chat_id: chatId,
         content_length: content.length,
-        db_save_ms: dbSaveTime,
-        broadcast_ms: totalTime - dbSaveTime,
         total_ms: totalTime,
         timestamp: new Date().toISOString(),
       });
+
+      return { success: true, message };
     } catch (error) {
       logger.error('Send message error', {
         event: 'send_message_error',
@@ -521,6 +508,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       event: 'get_online_users',
       online_count: onlineUsers.length,
       users: onlineUsers,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // ========== СОБЫТИЕ СОЗДАНИЯ СООБЩЕНИЯ (ЕДИНЫЙ ИСТОЧНИК ДЛЯ REST И WS) ==========
+
+  @OnEvent('message.created')
+  handleMessageCreated(message: Message) {
+    this.server.to(`chat_${message.chatId}`).emit('new_message', message);
+
+    logger.info('Message broadcast', {
+      event: 'broadcast_new_message',
+      message_id: message.id,
+      chat_id: message.chatId,
       timestamp: new Date().toISOString(),
     });
   }

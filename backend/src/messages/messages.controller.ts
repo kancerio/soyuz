@@ -35,8 +35,8 @@ export class MessagesController {
       +chatId,
       req.user.userId,
       body.content,
-      body.sourceLang || 'auto',
-      body.targetLang || 'en',
+      body.sourceLang,
+      body.targetLang,
     );
   }
 
