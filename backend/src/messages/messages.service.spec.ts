@@ -41,6 +41,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
         }),
       ),
       find: jest.fn().mockResolvedValue([]),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
 
     mockUsersService = {
@@ -65,6 +66,16 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
         targetLang: 'en',
         status: 'completed',
         mock: false,
+      }),
+      transcribeAudio: jest.fn().mockResolvedValue({
+        transcript: 'Распознанный голос',
+        summary: 'Краткое резюме',
+        language: 'ru',
+        status: 'completed',
+      }),
+      generateSummary: jest.fn().mockResolvedValue({
+        summary: 'Краткое резюме',
+        status: 'completed',
       }),
     };
 
@@ -206,6 +217,122 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
       await expect(
         service.getVoiceFile('secret-uuid-123', 999), // 999 не в чате
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('Безопасное фоновое обновление сообщения (Задача 4)', () => {
+    it('должен обновлять transcript, sttStatus, voiceSummary и summaryStatus при успехе AI', async () => {
+      const mockMsg = {
+        id: 101,
+        chatId: 1,
+        content: '[Голосовое сообщение]',
+        sttStatus: 'pending',
+        summaryStatus: 'pending',
+      };
+      mockMessagesRepository.findOne.mockResolvedValue(mockMsg);
+
+      // Временный тестовый файл
+      const fs = require('fs');
+      const path = require('path');
+      const tmpFile = path.join(process.cwd(), 'temp_test_audio.webm');
+      fs.writeFileSync(tmpFile, 'FAKE_AUDIO');
+
+      try {
+        await service.processVoiceInBackground(101, tmpFile, 'audio/webm', 'ru');
+
+        expect(mockMessagesRepository.save).toHaveBeenCalledWith(
+          expect.objectContaining({
+            transcript: 'Распознанный голос',
+            sttStatus: 'completed',
+            voiceSummary: 'Краткое резюме',
+            summaryStatus: 'completed',
+          }),
+        );
+        expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+          'message.transcribed',
+          expect.objectContaining({
+            messageId: 101,
+            transcript: 'Распознанный голос',
+            sttStatus: 'completed',
+          }),
+        );
+        expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+          'message.voice_summary',
+          expect.objectContaining({
+            messageId: 101,
+            voiceSummary: 'Краткое резюме',
+            summaryStatus: 'completed',
+          }),
+        );
+      } finally {
+        if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+      }
+    });
+
+    it('при ошибке STT должен безопасно выставлять failed и не ломать сообщение', async () => {
+      mockTranslationService.transcribeAudio.mockResolvedValueOnce({
+        transcript: '',
+        language: 'ru',
+        status: 'failed',
+      });
+
+      const fs = require('fs');
+      const path = require('path');
+      const tmpFile = path.join(process.cwd(), 'temp_test_audio_fail.webm');
+      fs.writeFileSync(tmpFile, 'FAKE_AUDIO');
+
+      try {
+        await service.processVoiceInBackground(101, tmpFile, 'audio/webm', 'ru');
+
+        expect(mockMessagesRepository.update).toHaveBeenCalledWith(
+          101,
+          expect.objectContaining({
+            sttStatus: 'failed',
+            summaryStatus: 'failed',
+          }),
+        );
+        expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+          'message.transcribed',
+          expect.objectContaining({
+            messageId: 101,
+            sttStatus: 'failed',
+          }),
+        );
+      } finally {
+        if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+      }
+    });
+
+    it('при ошибке Summary transcript должен сохраняться, а summaryStatus становиться failed', async () => {
+      mockTranslationService.transcribeAudio.mockResolvedValueOnce({
+        transcript: 'Транскрипт готов',
+        summary: undefined,
+        language: 'ru',
+        status: 'completed',
+      });
+      mockTranslationService.generateSummary.mockResolvedValueOnce({
+        summary: '',
+        status: 'failed',
+      });
+
+      const fs = require('fs');
+      const path = require('path');
+      const tmpFile = path.join(process.cwd(), 'temp_test_summary_fail.webm');
+      fs.writeFileSync(tmpFile, 'FAKE_AUDIO');
+
+      try {
+        await service.processVoiceInBackground(101, tmpFile, 'audio/webm', 'ru');
+
+        expect(mockMessagesRepository.save).toHaveBeenCalledWith(
+          expect.objectContaining({
+            transcript: 'Транскрипт готов',
+            sttStatus: 'completed',
+            summaryStatus: 'failed',
+          }),
+        );
+      } finally {
+        if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+      }
     });
   });
 });

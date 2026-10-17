@@ -21,6 +21,18 @@ export interface AssistResult {
   mock: boolean;
 }
 
+export interface SttResult {
+  transcript: string;
+  summary?: string;
+  language: string;
+  status: 'completed' | 'failed';
+}
+
+export interface SummaryResult {
+  summary: string;
+  status: 'completed' | 'failed';
+}
+
 @Injectable()
 export class TranslationService {
   private readonly logger = new Logger(TranslationService.name);
@@ -238,6 +250,91 @@ export class TranslationService {
       targetLang,
       status: 'failed',
       mock: false,
+    };
+  }
+
+  /**
+   * Распознавание речи через AI /stt
+   */
+  async transcribeAudio(
+    fileBuffer: Buffer,
+    filename: string,
+    mimeType: string,
+    language: string = 'ru',
+  ): Promise<SttResult> {
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        const formData = new FormData();
+        const blob = new Blob([new Uint8Array(fileBuffer)], { type: mimeType });
+        formData.append('audio', blob, filename);
+        formData.append('language', language);
+
+        const response = await firstValueFrom(
+          this.httpService.post(`${this.aiBaseUrl}/stt`, formData, {
+            timeout: this.timeoutMs,
+          }),
+        );
+
+        return {
+          transcript: response.data.recognized_text || '',
+          summary: response.data.summary || undefined,
+          language: response.data.language || language,
+          status: 'completed',
+        };
+      } catch (error) {
+        const status = error.response?.status;
+        if (status === 503 || error.code === 'ECONNABORTED') {
+          this.logger.warn(`STT attempt ${attempt + 1} failed (${status || 'timeout'}), retrying...`);
+          continue;
+        }
+        break;
+      }
+    }
+
+    return {
+      transcript: '',
+      language,
+      status: 'failed',
+    };
+  }
+
+  /**
+   * Генерация краткого резюме текста через AI /secretary
+   */
+  async generateSummary(text: string): Promise<SummaryResult> {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return { summary: '', status: 'failed' };
+    }
+
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        const response = await firstValueFrom(
+          this.httpService.post(
+            `${this.aiBaseUrl}/secretary`,
+            { action: 'summary', details: trimmed },
+            { timeout: this.timeoutMs },
+          ),
+        );
+
+        const summary = response.data.message || '';
+        return {
+          summary,
+          status: 'completed',
+        };
+      } catch (error) {
+        const status = error.response?.status;
+        if (status === 503 || error.code === 'ECONNABORTED') {
+          this.logger.warn(`Summary attempt ${attempt + 1} failed (${status || 'timeout'}), retrying...`);
+          continue;
+        }
+        break;
+      }
+    }
+
+    return {
+      summary: '',
+      status: 'failed',
     };
   }
 

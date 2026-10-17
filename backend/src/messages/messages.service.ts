@@ -310,7 +310,137 @@ export class MessagesService {
     // Рассылаем realtime new_message всем участникам
     this.eventEmitter.emit('message.created', fullMessage);
 
+    // Безопасное фоновое обновление: запуск STT и резюмирования
+    this.processVoiceInBackground(saved.id, filePath, file.mimetype, 'ru');
+
     return fullMessage;
+  }
+
+  /**
+   * Безопасное фоновое обновление сообщения (STT и резюме).
+   * Ошибка AI сервиса не ломает сообщение и сохраняет аудиофайл доступным.
+   */
+  async processVoiceInBackground(
+    messageId: number,
+    filePath: string,
+    mimeType: string,
+    language: string = 'ru',
+  ): Promise<void> {
+    let message = await this.messagesRepository.findOne({ where: { id: messageId } });
+    if (!message) return;
+
+    try {
+      const fileBuffer = await fs.promises.readFile(filePath);
+      const filename = path.basename(filePath);
+
+      // 1. Распознавание речи через AI (STT)
+      const sttResult = await this.translationService.transcribeAudio(
+        fileBuffer,
+        filename,
+        mimeType,
+        language,
+      );
+
+      message = await this.messagesRepository.findOne({ where: { id: messageId } });
+      if (!message) return;
+
+      if (sttResult.status === 'completed' && sttResult.transcript) {
+        message.transcript = sttResult.transcript;
+        message.sttStatus = 'completed';
+        await this.messagesRepository.save(message);
+
+        // Событие транскрипции для WebSocket участников чата
+        this.eventEmitter.emit('message.transcribed', {
+          messageId: message.id,
+          chatId: message.chatId,
+          transcript: message.transcript,
+          sttStatus: message.sttStatus,
+        });
+
+        // 2. Генерация краткого резюме (Summary)
+        try {
+          let summaryText = sttResult.summary;
+          if (!summaryText) {
+            const sumResult = await this.translationService.generateSummary(message.transcript);
+            if (sumResult.status === 'completed') {
+              summaryText = sumResult.summary;
+            }
+          }
+
+          if (summaryText) {
+            message.voiceSummary = summaryText;
+            message.summaryStatus = 'completed';
+            await this.messagesRepository.save(message);
+
+            this.eventEmitter.emit('message.voice_summary', {
+              messageId: message.id,
+              chatId: message.chatId,
+              voiceSummary: message.voiceSummary,
+              summaryStatus: message.summaryStatus,
+            });
+          } else {
+            message.summaryStatus = 'failed';
+            await this.messagesRepository.save(message);
+
+            this.eventEmitter.emit('message.voice_summary', {
+              messageId: message.id,
+              chatId: message.chatId,
+              voiceSummary: '',
+              summaryStatus: 'failed',
+            });
+          }
+        } catch (sumErr) {
+          // Ошибка summary не повреждает transcript и само сообщение
+          await this.messagesRepository.update(messageId, { summaryStatus: 'failed' });
+          this.eventEmitter.emit('message.voice_summary', {
+            messageId: message.id,
+            chatId: message.chatId,
+            voiceSummary: '',
+            summaryStatus: 'failed',
+          });
+        }
+      } else {
+        // Ошибка STT — сохраняем статус failed, сообщение доступно
+        await this.messagesRepository.update(messageId, {
+          sttStatus: 'failed',
+          summaryStatus: 'failed',
+        });
+
+        this.eventEmitter.emit('message.transcribed', {
+          messageId: message.id,
+          chatId: message.chatId,
+          transcript: '',
+          sttStatus: 'failed',
+        });
+
+        this.eventEmitter.emit('message.voice_summary', {
+          messageId: message.id,
+          chatId: message.chatId,
+          voiceSummary: '',
+          summaryStatus: 'failed',
+        });
+      }
+    } catch (error) {
+      // Изолируем любые внешние сбои AI
+      await this.messagesRepository.update(messageId, {
+        sttStatus: 'failed',
+        summaryStatus: 'failed',
+      });
+
+      this.eventEmitter.emit('message.transcribed', {
+        messageId,
+        chatId: message?.chatId || 0,
+        transcript: '',
+        sttStatus: 'failed',
+      });
+
+      this.eventEmitter.emit('message.voice_summary', {
+        messageId,
+        chatId: message?.chatId || 0,
+        voiceSummary: '',
+        summaryStatus: 'failed',
+      });
+    }
   }
 
   async getVoiceFile(voiceFileId: string, userId: number): Promise<{ filePath: string; mimeType: string }> {
