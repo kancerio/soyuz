@@ -37,6 +37,21 @@ CREATE TABLE IF NOT EXISTS messages (
   "isDelivered" BOOLEAN DEFAULT FALSE,
   "isRead" BOOLEAN DEFAULT FALSE,
   "readAt" TIMESTAMP,
+  -- Поля для перевода
+  "originalText" TEXT,
+  "sourceLang" VARCHAR(10),
+  "translatedText" TEXT,
+  "targetLang" VARCHAR(10),
+  "translateStatus" VARCHAR(20) DEFAULT 'none',
+  -- Поля для голосовых сообщений и STT
+  "voiceFileId" VARCHAR(64),
+  "voiceMimeType" VARCHAR(100),
+  "voiceSize" INTEGER,
+  "voiceDuration" INTEGER,
+  "transcript" TEXT,
+  "sttStatus" VARCHAR(20) DEFAULT 'none',
+  "voiceSummary" TEXT,
+  "summaryStatus" VARCHAR(20) DEFAULT 'none',
   "createdAt" TIMESTAMP DEFAULT NOW(),
   "editedAt" TIMESTAMP
 );
@@ -44,5 +59,7 @@ CREATE TABLE IF NOT EXISTS messages (
 -- Индексы
 CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages("chatId");
 CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages("userId");
+CREATE INDEX IF NOT EXISTS idx_messages_voice_file_id ON messages("voiceFileId");
 CREATE INDEX IF NOT EXISTS idx_chat_participants_chat_id ON chat_participants(chat_id);
 CREATE INDEX IF NOT EXISTS idx_chat_participants_user_id ON chat_participants(user_id);
+
