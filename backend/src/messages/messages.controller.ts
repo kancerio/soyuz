@@ -1,5 +1,21 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Request,
+  UseInterceptors,
+  UploadedFile,
+  Res,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { MessagesService } from './messages.service';
 import { ChatsService } from '../chats/chats.service';
 import { AssistDto } from './dto/assist.dto';
@@ -38,6 +54,40 @@ export class MessagesController {
       body.sourceLang,
       body.targetLang,
     );
+  }
+
+  @Post('chat/:chatId/voice')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 20 * 1024 * 1024 },
+    }),
+  )
+  async sendVoiceMessage(
+    @Request() req,
+    @Param('chatId') chatId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('duration') duration?: string,
+  ) {
+    return this.messagesService.sendVoiceMessage(
+      +chatId,
+      req.user.userId,
+      file,
+      duration ? +duration : null,
+    );
+  }
+
+  @Get('voice/:fileId')
+  async getVoiceFile(
+    @Request() req,
+    @Param('fileId') fileId: string,
+    @Res() res: Response,
+  ) {
+    const { filePath, mimeType } = await this.messagesService.getVoiceFile(
+      fileId,
+      req.user.userId,
+    );
+    res.setHeader('Content-Type', mimeType);
+    return res.sendFile(filePath);
   }
 
   @Post('assist')

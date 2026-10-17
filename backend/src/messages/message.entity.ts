@@ -2,7 +2,9 @@ import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, ManyToOne, Jo
 import { User } from '../users/user.entity';
 import { Chat } from '../chats/chat.entity';
 
-export type TranslateStatus = 'pending' | 'completed' | 'failed' | 'skipped';
+export type TranslateStatus = 'pending' | 'completed' | 'failed' | 'skipped' | 'none';
+export type SttStatus = 'pending' | 'completed' | 'failed' | 'none';
+export type SummaryStatus = 'pending' | 'completed' | 'failed' | 'none';
 
 @Entity('messages')
 export class Message {
@@ -46,7 +48,7 @@ export class Message {
   readAt: Date;
   // ======================================
 
-  // ========== НОВЫЕ ПОЛЯ ДЛЯ ПЕРЕВОДА ==========
+  // ========== ПОЛЯ ДЛЯ ПЕРЕВОДА ==========
   @Column({ type: 'text', nullable: true })
   originalText: string;
 
@@ -61,7 +63,33 @@ export class Message {
 
   @Column({ type: 'varchar', length: 20, default: 'pending' })
   translateStatus: TranslateStatus;
-  // ==============================================
+  // =======================================
+
+  // ========== ПОЛЯ ДЛЯ ГОЛОСОВЫХ СООБЩЕНИЙ И STT ==========
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  voiceFileId: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  voiceMimeType: string | null;
+
+  @Column({ type: 'integer', nullable: true })
+  voiceSize: number | null;
+
+  @Column({ type: 'integer', nullable: true })
+  voiceDuration: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  transcript: string | null;
+
+  @Column({ type: 'varchar', length: 20, default: 'none' })
+  sttStatus: SttStatus;
+
+  @Column({ type: 'text', nullable: true })
+  voiceSummary: string | null;
+
+  @Column({ type: 'varchar', length: 20, default: 'none' })
+  summaryStatus: SummaryStatus;
+  // ========================================================
 
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;

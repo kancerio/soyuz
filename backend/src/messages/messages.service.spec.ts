@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 
 jest.mock('@nestjs/event-emitter', () => {
   class MockEventEmitter2 {
@@ -140,5 +140,72 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
         id: 101,
       }),
     );
+  });
+
+  describe('Voice Messages (Задача 2)', () => {
+    const validAudioFile: any = {
+      buffer: Buffer.from('FAKE_AUDIO_DATA_FOR_TESTING'),
+      mimetype: 'audio/webm',
+      size: 28,
+      originalname: 'voice.webm',
+    };
+
+    it('должен отклонять отправку голосового, если пользователь не участник чата', async () => {
+      await expect(
+        service.sendVoiceMessage(1, 999, validAudioFile),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('должен отклонять недопустимый MIME-тип (например, application/pdf)', async () => {
+      const invalidFile: any = {
+        ...validAudioFile,
+        mimetype: 'application/pdf',
+      };
+      await expect(
+        service.sendVoiceMessage(1, 10, invalidFile),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('должен отклонять файл размером более 20 МБ', async () => {
+      const hugeFile: any = {
+        ...validAudioFile,
+        size: 25 * 1024 * 1024,
+      };
+      await expect(
+        service.sendVoiceMessage(1, 10, hugeFile),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('должен успешно сохранять голосовое сообщение с безопасным voiceFileId и рассылать message.created', async () => {
+      const result = await service.sendVoiceMessage(1, 10, validAudioFile, 12);
+
+      expect(mockMessagesRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: '[Голосовое сообщение]',
+          voiceMimeType: 'audio/webm',
+          voiceSize: 28,
+          voiceDuration: 12,
+          sttStatus: 'pending',
+          summaryStatus: 'pending',
+        }),
+      );
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+        'message.created',
+        expect.anything(),
+      );
+    });
+
+    it('должен блокировать получение голосового файла, если пользователь не в чате', async () => {
+      mockMessagesRepository.findOne.mockResolvedValueOnce({
+        id: 101,
+        chatId: 1,
+        voiceFileId: 'secret-uuid-123',
+        voiceMimeType: 'audio/webm',
+      });
+
+      await expect(
+        service.getVoiceFile('secret-uuid-123', 999), // 999 не в чате
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 });

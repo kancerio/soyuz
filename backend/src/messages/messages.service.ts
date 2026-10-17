@@ -1,11 +1,44 @@
-import { Injectable, NotFoundException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import * as fs from 'fs';
+import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { Message } from './message.entity';
 import { UsersService } from '../users/users.service';
 import { ChatsService } from '../chats/chats.service';
 import { TranslationService, AssistResult } from '../translation/translation.service';
+
+const ALLOWED_VOICE_MIME_TYPES = [
+  'audio/wav',
+  'audio/wave',
+  'audio/x-wav',
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/ogg',
+  'audio/webm',
+  'audio/m4a',
+  'audio/mp4',
+  'audio/aac',
+  'audio/x-m4a',
+];
+
+const MIME_EXTENSION_MAP: Record<string, string> = {
+  'audio/wav': '.wav',
+  'audio/wave': '.wav',
+  'audio/x-wav': '.wav',
+  'audio/mpeg': '.mp3',
+  'audio/mp3': '.mp3',
+  'audio/ogg': '.ogg',
+  'audio/webm': '.webm',
+  'audio/m4a': '.m4a',
+  'audio/x-m4a': '.m4a',
+  'audio/mp4': '.mp4',
+  'audio/aac': '.aac',
+};
+
+const MAX_VOICE_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 
 @Injectable()
 export class MessagesService {
@@ -214,5 +247,101 @@ export class MessagesService {
       },
       relations: ['user'],
     });
+  }
+
+  // ========== ГОЛОСОВЫЕ СООБЩЕНИЯ (ЗАДАЧА 2) ==========
+
+  async sendVoiceMessage(
+    chatId: number,
+    userId: number,
+    file: Express.Multer.File,
+    duration?: number | null,
+  ): Promise<Message> {
+    const isParticipant = await this.chatsService.isParticipant(chatId, userId);
+    if (!isParticipant) {
+      throw new ForbiddenException('Вы не являетесь участником этого чата');
+    }
+
+    if (!file || !file.buffer || file.buffer.length === 0) {
+      throw new BadRequestException('Аудиофайл не передан или пустой');
+    }
+
+    const mimeType = file.mimetype.toLowerCase();
+    if (!ALLOWED_VOICE_MIME_TYPES.includes(mimeType)) {
+      throw new BadRequestException(
+        'Недопустимый формат аудиофайла. Поддерживаются: wav, mp3, ogg, webm, m4a, aac',
+      );
+    }
+
+    if (file.size > MAX_VOICE_FILE_SIZE) {
+      throw new BadRequestException('Размер аудиофайла не должен превышать 20 МБ');
+    }
+
+    const voiceFileId = randomUUID();
+    const ext = MIME_EXTENSION_MAP[mimeType] || '.bin';
+    const uploadDir = path.join(process.cwd(), 'uploads', 'voice');
+    await fs.promises.mkdir(uploadDir, { recursive: true });
+
+    const storedFileName = `${voiceFileId}${ext}`;
+    const filePath = path.join(uploadDir, storedFileName);
+    await fs.promises.writeFile(filePath, file.buffer);
+
+    const message = this.messagesRepository.create({
+      content: '[Голосовое сообщение]',
+      userId,
+      chatId,
+      isDelivered: true,
+      voiceFileId,
+      voiceMimeType: file.mimetype,
+      voiceSize: file.size,
+      voiceDuration: duration || null,
+      translateStatus: 'none',
+      sttStatus: 'pending',
+      summaryStatus: 'pending',
+    });
+
+    const saved = await this.messagesRepository.save(message);
+
+    const fullMessage = (await this.messagesRepository.findOne({
+      where: { id: saved.id },
+      relations: ['user'],
+    })) || saved;
+
+    // Рассылаем realtime new_message всем участникам
+    this.eventEmitter.emit('message.created', fullMessage);
+
+    return fullMessage;
+  }
+
+  async getVoiceFile(voiceFileId: string, userId: number): Promise<{ filePath: string; mimeType: string }> {
+    const message = await this.messagesRepository.findOne({
+      where: { voiceFileId },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Голосовое сообщение не найдено');
+    }
+
+    const isParticipant = await this.chatsService.isParticipant(message.chatId, userId);
+    if (!isParticipant) {
+      throw new ForbiddenException('Доступ к голосовому сообщению запрещён');
+    }
+
+    const uploadDir = path.join(process.cwd(), 'uploads', 'voice');
+    if (!fs.existsSync(uploadDir)) {
+      throw new NotFoundException('Файл не найден на диске');
+    }
+
+    const files = await fs.promises.readdir(uploadDir);
+    const matchingFile = files.find((f) => f.startsWith(voiceFileId));
+    if (!matchingFile) {
+      throw new NotFoundException('Файл голосового сообщения не найден на диске');
+    }
+
+    const filePath = path.join(uploadDir, matchingFile);
+    return {
+      filePath,
+      mimeType: message.voiceMimeType || 'audio/webm',
+    };
   }
 }
