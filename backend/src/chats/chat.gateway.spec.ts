@@ -101,4 +101,36 @@ describe('ChatGateway - Realtime Unified Events (Задача 1)', () => {
       message: expect.objectContaining({ id: 42 }),
     });
   });
+
+  describe('События STT и Summary для участников чата (Задача 5)', () => {
+    it('handleMessageTranscribed должен отправлять message_transcribed в комнату чата', () => {
+      const payload = {
+        messageId: 42,
+        chatId: 7,
+        transcript: 'Привет, это расшифровка',
+        sttStatus: 'completed',
+      };
+
+      gateway.handleMessageTranscribed(payload);
+
+      expect(mockServer.to).toHaveBeenCalledWith('chat_7');
+      const roomEmitter = mockServer.to('chat_7');
+      expect(roomEmitter.emit).toHaveBeenCalledWith('message_transcribed', payload);
+    });
+
+    it('handleMessageVoiceSummary должен отправлять message_voice_summary в комнату чата', () => {
+      const payload = {
+        messageId: 42,
+        chatId: 7,
+        voiceSummary: 'Краткая выжимка',
+        summaryStatus: 'completed',
+      };
+
+      gateway.handleMessageVoiceSummary(payload);
+
+      expect(mockServer.to).toHaveBeenCalledWith('chat_7');
+      const roomEmitter = mockServer.to('chat_7');
+      expect(roomEmitter.emit).toHaveBeenCalledWith('message_voice_summary', payload);
+    });
+  });
 });

@@ -545,4 +545,42 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       timestamp: new Date().toISOString(),
     });
   }
+
+  // ========== СОБЫТИЯ ГОЛОСОВЫХ СООБЩЕНИЙ: ТРАНСКРИПЦИЯ И РЕЗЮМЕ (ЗАДАЧА 5) ==========
+
+  @OnEvent('message.transcribed')
+  handleMessageTranscribed(payload: {
+    messageId: number;
+    chatId: number;
+    transcript: string;
+    sttStatus: string;
+  }) {
+    this.server.to(`chat_${payload.chatId}`).emit('message_transcribed', payload);
+
+    logger.info('Message transcribed broadcast', {
+      event: 'message_transcribed',
+      message_id: payload.messageId,
+      chat_id: payload.chatId,
+      stt_status: payload.sttStatus,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  @OnEvent('message.voice_summary')
+  handleMessageVoiceSummary(payload: {
+    messageId: number;
+    chatId: number;
+    voiceSummary: string;
+    summaryStatus: string;
+  }) {
+    this.server.to(`chat_${payload.chatId}`).emit('message_voice_summary', payload);
+
+    logger.info('Message voice summary broadcast', {
+      event: 'message_voice_summary',
+      message_id: payload.messageId,
+      chat_id: payload.chatId,
+      summary_status: payload.summaryStatus,
+      timestamp: new Date().toISOString(),
+    });
+  }
 }
