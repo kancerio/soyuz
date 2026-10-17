@@ -187,6 +187,16 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('должен отклонять файл с неверной сигнатурой magic bytes', async () => {
+      const corruptFile: any = {
+        ...validAudioFile,
+        buffer: Buffer.from([0x00, 0x01, 0x02, 0x03]),
+      };
+      await expect(
+        service.sendVoiceMessage(1, 10, corruptFile),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('должен успешно сохранять голосовое сообщение с безопасным voiceFileId и рассылать message.created', async () => {
       const result = await service.sendVoiceMessage(1, 10, validAudioFile, 12);
 
@@ -240,10 +250,16 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
       try {
         await service.processVoiceInBackground(101, tmpFile, 'audio/webm', 'ru');
 
-        expect(mockMessagesRepository.save).toHaveBeenCalledWith(
+        expect(mockMessagesRepository.update).toHaveBeenCalledWith(
+          101,
           expect.objectContaining({
             transcript: 'Распознанный голос',
             sttStatus: 'completed',
+          }),
+        );
+        expect(mockMessagesRepository.update).toHaveBeenCalledWith(
+          101,
+          expect.objectContaining({
             voiceSummary: 'Краткое резюме',
             summaryStatus: 'completed',
           }),
@@ -323,10 +339,16 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
       try {
         await service.processVoiceInBackground(101, tmpFile, 'audio/webm', 'ru');
 
-        expect(mockMessagesRepository.save).toHaveBeenCalledWith(
+        expect(mockMessagesRepository.update).toHaveBeenCalledWith(
+          101,
           expect.objectContaining({
             transcript: 'Транскрипт готов',
             sttStatus: 'completed',
+          }),
+        );
+        expect(mockMessagesRepository.update).toHaveBeenCalledWith(
+          101,
+          expect.objectContaining({
             summaryStatus: 'failed',
           }),
         );

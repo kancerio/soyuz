@@ -7,12 +7,14 @@ import { Chat } from './chat.entity';
 import { ChatParticipant } from './chat-participant.entity';
 import { UsersModule } from '../users/users.module';
 import { MessagesModule } from '../messages/messages.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Chat, ChatParticipant]),
     UsersModule,
     forwardRef(() => MessagesModule),  // ← forwardRef для MessagesModule
+    AuthModule,
   ],
   controllers: [ChatsController],
   providers: [ChatsService, ChatGateway],

@@ -21,14 +21,14 @@ export class Message {
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @Column()
+  @Column({ name: 'user_id' })
   userId: number;
 
   @ManyToOne(() => Chat, (chat) => chat.messages)
   @JoinColumn({ name: 'chat_id' })
   chat: Chat;
 
-  @Column()
+  @Column({ name: 'chat_id' })
   chatId: number;
 
   @Column({ type: 'boolean', default: false })

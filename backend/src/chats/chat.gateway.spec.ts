@@ -133,4 +133,73 @@ describe('ChatGateway - Realtime Unified Events (Задача 1)', () => {
       expect(roomEmitter.emit).toHaveBeenCalledWith('message_voice_summary', payload);
     });
   });
+
+  describe('JWT авторизация и безопасность WebSocket (Задачи 4 и 5)', () => {
+    it('handleAuth должен отклонять подключение при невалидном токене', async () => {
+      const mockJwtService: any = {
+        verify: jest.fn().mockImplementation(() => {
+          throw new Error('invalid token');
+        }),
+      };
+      (gateway as any).jwtService = mockJwtService;
+
+      const mockSocket: any = {
+        id: 'bad-socket',
+        handshake: { address: '127.0.0.1' },
+        emit: jest.fn(),
+      };
+
+      await gateway.handleAuth(mockSocket, { token: 'invalid_token' });
+
+      expect(mockSocket.emit).toHaveBeenCalledWith('auth_error', {
+        message: 'Invalid or expired token',
+      });
+      expect((gateway as any).socketToUser.has('bad-socket')).toBe(false);
+    });
+
+    it('handleAuth должен успешно авторизовать пользователя по валидному JWT токену', async () => {
+      const mockJwtService: any = {
+        verify: jest.fn().mockReturnValue({ sub: 10, email: 'test@example.com' }),
+      };
+      (gateway as any).jwtService = mockJwtService;
+
+      const mockSocket: any = {
+        id: 'good-socket',
+        handshake: { address: '127.0.0.1' },
+        emit: jest.fn(),
+        join: jest.fn(),
+      };
+
+      await gateway.handleAuth(mockSocket, { token: 'Bearer valid_jwt' });
+
+      expect(mockSocket.emit).toHaveBeenCalledWith(
+        'auth_success',
+        expect.objectContaining({ userId: 10 }),
+      );
+      expect((gateway as any).socketToUser.get('good-socket')).toBe(10);
+      expect((gateway as any).userToSocket.get(10)).toBe('good-socket');
+    });
+
+    it('handleMessageCreated должен отправлять сообщение через client.to, исключая отправителя', () => {
+      const mockSenderSocket: any = {
+        to: jest.fn().mockReturnValue({ emit: jest.fn() }),
+      };
+      (gateway as any).userToSocket.set(10, 'socket-10');
+      mockServer.sockets.sockets.set('socket-10', mockSenderSocket);
+
+      const testMessage = {
+        id: 42,
+        chatId: 7,
+        userId: 10,
+        content: 'Привет без дубликатов',
+      } as Message;
+
+      gateway.handleMessageCreated(testMessage);
+
+      expect(mockSenderSocket.to).toHaveBeenCalledWith('chat_7');
+      const senderRoom = mockSenderSocket.to('chat_7');
+      expect(senderRoom.emit).toHaveBeenCalledWith('new_message', testMessage);
+      expect(mockServer.to).not.toHaveBeenCalledWith('chat_7');
+    });
+  });
 });

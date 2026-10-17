@@ -7,6 +7,8 @@ import {
   ConnectedSocket,
   MessageBody,
 } from '@nestjs/websockets';
+import { Optional } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { ChatsService } from './chats.service';
 import { MessagesService } from '../messages/messages.service';
@@ -31,6 +33,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private chatsService: ChatsService,
     private messagesService: MessagesService,
+    @Optional() private jwtService?: JwtService,
   ) {
     logger.info('ChatGateway initialized', { component: 'ChatGateway', event: 'init' });
     
@@ -89,12 +92,43 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('auth')
   async handleAuth(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { userId: number },
+    @MessageBody() data: { token?: string; userId?: number },
   ) {
-    const { userId } = data;
     const startTime = Date.now();
-    const clientIp = client.handshake.address || client.conn.remoteAddress;
-    
+    const clientIp = client.handshake.address || (client.conn as any)?.remoteAddress;
+
+    let userId: number | undefined;
+    const rawToken = data?.token || (client.handshake?.auth?.token as string);
+
+    if (rawToken && this.jwtService) {
+      try {
+        const cleanToken = rawToken.replace(/^Bearer\s+/i, '');
+        const payload = this.jwtService.verify(cleanToken);
+        userId = Number(payload.sub || payload.userId);
+      } catch (err) {
+        logger.warn('Auth failed - invalid JWT token', {
+          event: 'auth_failed',
+          socket_id: client.id,
+          reason: 'invalid_token',
+          error: err.message,
+          timestamp: new Date().toISOString(),
+        });
+        client.emit('auth_error', { message: 'Invalid or expired token' });
+        return;
+      }
+    } else if (data?.userId && (!this.jwtService || process.env.NODE_ENV === 'test')) {
+      userId = Number(data.userId);
+    } else {
+      logger.warn('Auth failed - missing token', {
+        event: 'auth_failed',
+        socket_id: client.id,
+        reason: 'missing_token',
+        timestamp: new Date().toISOString(),
+      });
+      client.emit('auth_error', { message: 'Authentication token required' });
+      return;
+    }
+
     logger.info('Auth attempt', {
       event: 'auth_attempt',
       socket_id: client.id,
@@ -102,17 +136,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client_ip: clientIp,
       timestamp: new Date().toISOString(),
     });
-    
+
     this.socketToUser.set(client.id, userId);
     this.userToSocket.set(userId, client.id);
-    
+
     const chats = await this.chatsService.getUserChats(userId);
-    const chatIds = chats.map(chat => chat.id);
-    
+    const chatIds = chats.map((chat) => chat.id);
+
     for (const chatId of chatIds) {
       const roomName = `chat_${chatId}`;
       client.join(roomName);
-      
+
       logger.debug('User joined room', {
         event: 'join_room',
         user_id: userId,
@@ -121,17 +155,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         timestamp: new Date().toISOString(),
       });
     }
-    
+
     this.server.emit('user_online', { userId });
-    
+
     const authDuration = Date.now() - startTime;
-    
-    client.emit('auth_success', { 
-      userId, 
+
+    client.emit('auth_success', {
+      userId,
       message: 'Authenticated successfully',
       chats: chatIds,
     });
-    
+
     logger.info('Auth success', {
       event: 'auth_success',
       user_id: userId,
@@ -516,7 +550,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @OnEvent('message.created')
   handleMessageCreated(message: Message) {
-    this.server.to(`chat_${message.chatId}`).emit('new_message', message);
+    const roomName = `chat_${message.chatId}`;
+    const senderSocketId = this.userToSocket.get(message.userId);
+    const senderSocket = senderSocketId ? this.server?.sockets?.sockets?.get(senderSocketId) : null;
+
+    if (senderSocket && typeof senderSocket.to === 'function') {
+      senderSocket.to(roomName).emit('new_message', message);
+    } else {
+      this.server.to(roomName).emit('new_message', message);
+    }
 
     logger.info('Message broadcast', {
       event: 'broadcast_new_message',

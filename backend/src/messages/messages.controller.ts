@@ -19,6 +19,8 @@ import type { Response } from 'express';
 import { MessagesService } from './messages.service';
 import { ChatsService } from '../chats/chats.service';
 import { AssistDto } from './dto/assist.dto';
+import { SendMessageDto } from './dto/send-message.dto';
+import { EditMessageDto } from './dto/edit-message.dto';
 
 @Controller('messages')
 @UseGuards(AuthGuard('jwt'))
@@ -45,7 +47,7 @@ export class MessagesController {
   async sendMessage(
     @Request() req,
     @Param('chatId') chatId: string,
-    @Body() body: { content: string; sourceLang?: string; targetLang?: string },
+    @Body() body: SendMessageDto,
   ) {
     return this.messagesService.sendMessageWithTranslation(
       +chatId,
@@ -99,7 +101,7 @@ async assist(@Body() body: AssistDto) {
   async editMessage(
     @Request() req,
     @Param('messageId') messageId: string,
-    @Body() body: { content: string },
+    @Body() body: EditMessageDto,
   ) {
     return this.messagesService.editMessage(+messageId, req.user.userId, body.content);
   }

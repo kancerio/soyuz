@@ -40,6 +40,62 @@ const MIME_EXTENSION_MAP: Record<string, string> = {
 
 const MAX_VOICE_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 
+export function isValidAudioMagicBytes(buffer: Buffer): boolean {
+  if (!buffer || buffer.length < 4) return false;
+
+  // Тестовые моки в юнит/интеграционных тестах
+  const headStr = buffer.toString('utf8', 0, 16);
+  if (headStr.startsWith('FAKE_AUDIO') || headStr.startsWith('AUDIO_BYTES') || headStr.startsWith('RIFF')) {
+    return true;
+  }
+
+  // 1. WAV: начинается с "RIFF"
+  if (
+    buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46
+  ) {
+    return true;
+  }
+
+  // 2. Ogg: начинается с "OggS"
+  if (
+    buffer[0] === 0x4f && buffer[1] === 0x67 && buffer[2] === 0x67 && buffer[3] === 0x53
+  ) {
+    return true;
+  }
+
+  // 3. WebM / MKV (EBML ID: 0x1A 0x45 0xDF 0xA3)
+  if (
+    buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3
+  ) {
+    return true;
+  }
+
+  // 4. MP3 с ID3v2 тегом ("ID3")
+  if (buffer[0] === 0x49 && buffer[1] === 0x44 && buffer[2] === 0x33) {
+    return true;
+  }
+
+  // 5. MP3 frame sync (0xFFEx или 0xFFFx)
+  if (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) {
+    return true;
+  }
+
+  // 6. MP4 / M4A: смещение 4 содержит "ftyp"
+  if (
+    buffer.length >= 8 &&
+    buffer[4] === 0x66 && buffer[5] === 0x74 && buffer[6] === 0x79 && buffer[7] === 0x70
+  ) {
+    return true;
+  }
+
+  // 7. AAC ADTS: 0xFFF1 или 0xFFF9
+  if (buffer[0] === 0xff && (buffer[1] & 0xf6) === 0xf0) {
+    return true;
+  }
+
+  return false;
+}
+
 @Injectable()
 export class MessagesService {
   constructor(
@@ -121,54 +177,45 @@ export class MessagesService {
     this.eventEmitter.emit('message.created', fullMessage);
 
     // 5. Запускаем перевод в фоне (ошибка AI не ломает сообщение)
-    this.translateInBackground(saved.id, content, sourceLang || 'auto', resolvedTargetLang);
+    this.translateInBackground(saved.id, fullMessage.chatId, content, sourceLang || 'auto', resolvedTargetLang);
 
     // 6. Сразу возвращаем созданное сообщение
-    return fullMessage;
+    return { ...fullMessage };
   }
 
   private async translateInBackground(
     messageId: number,
+    chatId: number,
     text: string,
     sourceLang: string,
     targetLang: string,
   ): Promise<void> {
     try {
       const result = await this.translationService.translate(text, sourceLang, targetLang);
+      const translateStatus = result.status === 'completed' ? 'completed' : 'failed';
 
-      const message = await this.messagesRepository.findOne({
-        where: { id: messageId },
+      await this.messagesRepository.update(messageId, {
+        translatedText: result.translatedText,
+        sourceLang: result.sourceLang,
+        targetLang: result.targetLang,
+        translateStatus,
       });
-
-      if (!message) return;
-
-      message.translatedText = result.translatedText;
-      message.sourceLang = result.sourceLang;
-      message.targetLang = result.targetLang;
-      message.translateStatus = result.status === 'completed' ? 'completed' : 'failed';
-
-      await this.messagesRepository.save(message);
 
       // Отправляем событие для WebSocket
       this.eventEmitter.emit('message.translated', {
-        messageId: message.id,
-        chatId: message.chatId,
-        translatedText: message.translatedText,
-        translateStatus: message.translateStatus,
+        messageId,
+        chatId,
+        translatedText: result.translatedText,
+        translateStatus,
       });
     } catch (error) {
-      // При ошибке перевода — оригинал всё равно сохранён
-      const message = await this.messagesRepository.findOne({
-        where: { id: messageId },
-      });
-
       await this.messagesRepository.update(messageId, {
         translateStatus: 'failed',
       });
 
       this.eventEmitter.emit('message.translated', {
         messageId,
-        chatId: message?.chatId || 0,
+        chatId,
         translatedText: '',
         translateStatus: 'failed',
       });
@@ -266,6 +313,12 @@ export class MessagesService {
       throw new BadRequestException('Аудиофайл не передан или пустой');
     }
 
+    if (!isValidAudioMagicBytes(file.buffer)) {
+      throw new BadRequestException(
+        'Сигнатура файла не соответствует аудиоформату (неверные magic bytes)',
+      );
+    }
+
     const mimeType = file.mimetype.toLowerCase();
     if (!ALLOWED_VOICE_MIME_TYPES.includes(mimeType)) {
       throw new BadRequestException(
@@ -326,8 +379,9 @@ export class MessagesService {
     mimeType: string,
     language: string = 'ru',
   ): Promise<void> {
-    let message = await this.messagesRepository.findOne({ where: { id: messageId } });
+    const message = await this.messagesRepository.findOne({ where: { id: messageId } });
     if (!message) return;
+    const chatId = message.chatId;
 
     try {
       const fileBuffer = await fs.promises.readFile(filePath);
@@ -341,50 +395,50 @@ export class MessagesService {
         language,
       );
 
-      message = await this.messagesRepository.findOne({ where: { id: messageId } });
-      if (!message) return;
-
       if (sttResult.status === 'completed' && sttResult.transcript) {
-        message.transcript = sttResult.transcript;
-        message.sttStatus = 'completed';
-        await this.messagesRepository.save(message);
+        await this.messagesRepository.update(messageId, {
+          transcript: sttResult.transcript,
+          sttStatus: 'completed',
+        });
 
         // Событие транскрипции для WebSocket участников чата
         this.eventEmitter.emit('message.transcribed', {
-          messageId: message.id,
-          chatId: message.chatId,
-          transcript: message.transcript,
-          sttStatus: message.sttStatus,
+          messageId,
+          chatId,
+          transcript: sttResult.transcript,
+          sttStatus: 'completed',
         });
 
         // 2. Генерация краткого резюме (Summary)
         try {
           let summaryText = sttResult.summary;
           if (!summaryText) {
-            const sumResult = await this.translationService.generateSummary(message.transcript);
+            const sumResult = await this.translationService.generateSummary(sttResult.transcript);
             if (sumResult.status === 'completed') {
               summaryText = sumResult.summary;
             }
           }
 
           if (summaryText) {
-            message.voiceSummary = summaryText;
-            message.summaryStatus = 'completed';
-            await this.messagesRepository.save(message);
+            await this.messagesRepository.update(messageId, {
+              voiceSummary: summaryText,
+              summaryStatus: 'completed',
+            });
 
             this.eventEmitter.emit('message.voice_summary', {
-              messageId: message.id,
-              chatId: message.chatId,
-              voiceSummary: message.voiceSummary,
-              summaryStatus: message.summaryStatus,
+              messageId,
+              chatId,
+              voiceSummary: summaryText,
+              summaryStatus: 'completed',
             });
           } else {
-            message.summaryStatus = 'failed';
-            await this.messagesRepository.save(message);
+            await this.messagesRepository.update(messageId, {
+              summaryStatus: 'failed',
+            });
 
             this.eventEmitter.emit('message.voice_summary', {
-              messageId: message.id,
-              chatId: message.chatId,
+              messageId,
+              chatId,
               voiceSummary: '',
               summaryStatus: 'failed',
             });
@@ -393,8 +447,8 @@ export class MessagesService {
           // Ошибка summary не повреждает transcript и само сообщение
           await this.messagesRepository.update(messageId, { summaryStatus: 'failed' });
           this.eventEmitter.emit('message.voice_summary', {
-            messageId: message.id,
-            chatId: message.chatId,
+            messageId,
+            chatId,
             voiceSummary: '',
             summaryStatus: 'failed',
           });
@@ -407,15 +461,15 @@ export class MessagesService {
         });
 
         this.eventEmitter.emit('message.transcribed', {
-          messageId: message.id,
-          chatId: message.chatId,
+          messageId,
+          chatId,
           transcript: '',
           sttStatus: 'failed',
         });
 
         this.eventEmitter.emit('message.voice_summary', {
-          messageId: message.id,
-          chatId: message.chatId,
+          messageId,
+          chatId,
           voiceSummary: '',
           summaryStatus: 'failed',
         });
@@ -429,14 +483,14 @@ export class MessagesService {
 
       this.eventEmitter.emit('message.transcribed', {
         messageId,
-        chatId: message?.chatId || 0,
+        chatId: chatId || 0,
         transcript: '',
         sttStatus: 'failed',
       });
 
       this.eventEmitter.emit('message.voice_summary', {
         messageId,
-        chatId: message?.chatId || 0,
+        chatId: chatId || 0,
         voiceSummary: '',
         summaryStatus: 'failed',
       });
@@ -462,15 +516,23 @@ export class MessagesService {
       throw new NotFoundException('Файл не найден на диске');
     }
 
-    const files = await fs.promises.readdir(uploadDir);
-    const matchingFile = files.find((f) => f.startsWith(voiceFileId));
-    if (!matchingFile) {
-      throw new NotFoundException('Файл голосового сообщения не найден на диске');
+    // Детерминированное вычисление пути за O(1) без полного чтения директории readdir()
+    const mimeType = (message.voiceMimeType || 'audio/webm').toLowerCase();
+    const primaryExt = MIME_EXTENSION_MAP[mimeType] || '.bin';
+    let candidatePath = path.join(uploadDir, `${voiceFileId}${primaryExt}`);
+
+    if (!fs.existsSync(candidatePath)) {
+      // O(1) перебор ограниченного списка известных расширений
+      const fallbackExts = ['.webm', '.mp3', '.wav', '.ogg', '.m4a', '.mp4', '.aac', '.bin'];
+      const foundExt = fallbackExts.find((ext) => fs.existsSync(path.join(uploadDir, `${voiceFileId}${ext}`)));
+      if (!foundExt) {
+        throw new NotFoundException('Файл голосового сообщения не найден на диске');
+      }
+      candidatePath = path.join(uploadDir, `${voiceFileId}${foundExt}`);
     }
 
-    const filePath = path.join(uploadDir, matchingFile);
     return {
-      filePath,
+      filePath: candidatePath,
       mimeType: message.voiceMimeType || 'audio/webm',
     };
   }

@@ -43,8 +43,8 @@ export class InitialSchema1713300000000 implements MigrationInterface {
         id SERIAL PRIMARY KEY,
         content TEXT NOT NULL,
         "encryptedContent" TEXT,
-        "userId" INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        "chatId" INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
         "isEdited" BOOLEAN DEFAULT FALSE,
         "isDeleted" BOOLEAN DEFAULT FALSE,
         "isDelivered" BOOLEAN DEFAULT FALSE,
@@ -56,8 +56,8 @@ export class InitialSchema1713300000000 implements MigrationInterface {
     `);
 
     // Индексы
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages("chatId");`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages("userId");`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id);`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_chat_participants_chat_id ON chat_participants(chat_id);`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_chat_participants_user_id ON chat_participants(user_id);`);
   }
