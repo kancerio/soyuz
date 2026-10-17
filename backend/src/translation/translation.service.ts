@@ -132,7 +132,6 @@ export class TranslationService {
     }
 
     const payload = {
-      prompt: trimmed,
       text: trimmed,
       action,
     };
@@ -144,7 +143,7 @@ export class TranslationService {
         }),
       );
 
-      const result = response.data.result || response.data.translated_text;
+      const result = response.data.result;
 
       // Если AI не поддерживает режим — возвращаем mock-фолбэк
       if (!result || result === 'Неизвестное действие' || result.trim() === '') {
@@ -219,7 +218,7 @@ export class TranslationService {
 
         return {
           originalText: text,
-          translatedText: response.data.translated_text || response.data.result,
+          translatedText: response.data.translated_text,
           sourceLang: response.data.source_lang || sourceLang,
           targetLang: response.data.target_lang || targetLang,
           status: 'completed',
