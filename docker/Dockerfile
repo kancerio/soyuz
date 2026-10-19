@@ -8,6 +8,5 @@ COPY docker/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY ./app_ai /app/app_ai
-COPY .env /app/.env
 
 CMD ["uvicorn", "app_ai.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

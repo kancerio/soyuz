@@ -3,18 +3,12 @@
 import { ChangeEvent, useRef, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { aiClient, SummaryResponse } from '@/lib/aiClient';
+import { Message } from '@/types/chat';
 
 type AssistAction = 'shorten' | 'formal' | 'friendly';
 
-interface AIMessage {
-  senderId: number;
-  text: string;
-  timestamp: Date;
-  isDeleted?: boolean;
-}
-
 interface AIToolsPanelProps {
-  messages: AIMessage[];
+  messages: Message[];
   onTranscript: (text: string) => void;
 }
 
@@ -34,7 +28,7 @@ export default function AIToolsPanel({ messages, onTranscript }: AIToolsPanelPro
   const documentInputRef = useRef<HTMLInputElement>(null);
 
   const usableMessages = messages.filter(
-    (message) => !message.isDeleted && message.text.trim(),
+    (message) => !message.isDeleted && message.content.trim(),
   );
   const latestMessage = usableMessages[usableMessages.length - 1];
   const sourceLanguage = language;
@@ -57,13 +51,13 @@ export default function AIToolsPanel({ messages, onTranscript }: AIToolsPanelPro
     if (!latestMessage) return;
     void run('translate', async () => {
       const response = await aiClient.translate({
-        text: latestMessage.text,
+        text: latestMessage.content,
         source_lang: sourceLanguage,
         target_lang: targetLanguage,
       });
       return {
         title: `${t('translate')} (${targetLanguage})`,
-        body: response.translated_text || response.result,
+        body: response.result,
       };
     });
   };
@@ -72,7 +66,7 @@ export default function AIToolsPanel({ messages, onTranscript }: AIToolsPanelPro
     if (!latestMessage) return;
     void run('assist', async () => {
       const response = await aiClient.assist({
-        prompt: latestMessage.text,
+        text: latestMessage.content,
         action: assistAction,
       });
       return {
@@ -89,7 +83,7 @@ export default function AIToolsPanel({ messages, onTranscript }: AIToolsPanelPro
         language,
         messages: usableMessages.map((message) => ({
           sender_id: String(message.senderId),
-          text: message.text,
+          text: message.content,
           timestamp: message.timestamp.toISOString(),
         })),
       });

@@ -6,7 +6,6 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-
 _TASKS = {"translate", "assist", "summary", "document_analysis"}
 
 
@@ -30,7 +29,9 @@ def to_sft_record(record: Mapping[str, Any]) -> dict[str, Any]:
             f"{input_data.get('target_lang')}:\n{input_data.get('text', '')}"
         )
         assistant_content = str(output_data.get("translated_text", ""))
-        system_content = "Ты профессиональный переводчик. Верни только перевод без пояснений."
+        system_content = (
+            "Ты профессиональный переводчик. Верни только перевод без пояснений."
+        )
     elif task == "assist":
         context = input_data.get("context")
         context_text = f"\nКонтекст: {context}" if context else ""

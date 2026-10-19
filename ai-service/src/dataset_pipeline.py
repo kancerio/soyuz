@@ -11,12 +11,22 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
-
 SUPPORTED_LANGUAGES = {"ru", "en", "de", "fr", "es", "zh", "ar"}
 SUPPORTED_TASKS = {"translate", "assist", "summary", "document_analysis", "stt"}
 SUPPORTED_SPLITS = {"train", "validation", "test"}
-SUPPORTED_SOURCES = {"seed", "deepseek_api", "deepseek_local", "human", "public_dataset"}
-SUPPORTED_REVIEW_STATUSES = {"unreviewed", "machine_checked", "human_reviewed", "rejected"}
+SUPPORTED_SOURCES = {
+    "seed",
+    "deepseek_api",
+    "deepseek_local",
+    "human",
+    "public_dataset",
+}
+SUPPORTED_REVIEW_STATUSES = {
+    "unreviewed",
+    "machine_checked",
+    "human_reviewed",
+    "rejected",
+}
 ASSIST_ACTIONS = {"shorten", "formal", "friendly"}
 DEEPSEEK_TERMS_URL = "https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html"
 DEEPSEEK_R1_LICENSE_URL = "https://github.com/deepseek-ai/DeepSeek-R1/blob/main/LICENSE"
@@ -26,7 +36,9 @@ def load_jsonl(path: str | Path) -> list[dict[str, Any]]:
     """Load non-empty JSONL rows and report the line that cannot be parsed."""
 
     records: list[dict[str, Any]] = []
-    for line_number, raw_line in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), 1):
+    for line_number, raw_line in enumerate(
+        Path(path).read_text(encoding="utf-8").splitlines(), 1
+    ):
         if not raw_line.strip():
             continue
         try:
@@ -44,7 +56,9 @@ def _require_string(value: Any, field: str, errors: list[str], record_id: str) -
         errors.append(f"{record_id}: {field} must be a non-empty string")
 
 
-def _validate_task_payload(record: dict[str, Any], errors: list[str], record_id: str) -> None:
+def _validate_task_payload(
+    record: dict[str, Any], errors: list[str], record_id: str
+) -> None:
     task = record.get("task")
     payload = record.get("input")
     output = record.get("output")
@@ -54,7 +68,9 @@ def _validate_task_payload(record: dict[str, Any], errors: list[str], record_id:
     if task == "translate":
         for field in ("text", "source_lang", "target_lang"):
             _require_string(payload.get(field), field, errors, record_id)
-        _require_string(output.get("translated_text"), "translated_text", errors, record_id)
+        _require_string(
+            output.get("translated_text"), "translated_text", errors, record_id
+        )
     elif task == "assist":
         _require_string(payload.get("prompt"), "prompt", errors, record_id)
         action = payload.get("action")
@@ -72,11 +88,20 @@ def _validate_task_payload(record: dict[str, Any], errors: list[str], record_id:
                 if not isinstance(message, dict):
                     errors.append(f"{record_id}: messages[{index}] must be an object")
                     continue
-                _require_string(message.get("sender_id"), f"messages[{index}].sender_id", errors, record_id)
-                _require_string(message.get("text"), f"messages[{index}].text", errors, record_id)
+                _require_string(
+                    message.get("sender_id"),
+                    f"messages[{index}].sender_id",
+                    errors,
+                    record_id,
+                )
+                _require_string(
+                    message.get("text"), f"messages[{index}].text", errors, record_id
+                )
         _require_string(output.get("summary"), "summary", errors, record_id)
     elif task == "document_analysis":
-        _require_string(payload.get("document_text"), "document_text", errors, record_id)
+        _require_string(
+            payload.get("document_text"), "document_text", errors, record_id
+        )
         _require_string(output.get("summary"), "summary", errors, record_id)
     elif task == "stt":
         _require_string(payload.get("audio_ref"), "audio_ref", errors, record_id)
@@ -109,7 +134,9 @@ def validate_records(records: Iterable[dict[str, Any]]) -> list[str]:
             errors.append(f"{record_id}: task must be one of {sorted(SUPPORTED_TASKS)}")
 
         if record.get("split") not in SUPPORTED_SPLITS:
-            errors.append(f"{record_id}: split must be one of {sorted(SUPPORTED_SPLITS)}")
+            errors.append(
+                f"{record_id}: split must be one of {sorted(SUPPORTED_SPLITS)}"
+            )
 
         if not isinstance(record.get("input"), dict):
             errors.append(f"{record_id}: input must be an object")
@@ -128,7 +155,9 @@ def validate_records(records: Iterable[dict[str, Any]]) -> list[str]:
                 errors.append(f"{record_id}: metadata.review_status is unsupported")
             source = metadata.get("source")
             if source == "deepseek_api":
-                _require_string(metadata.get("model"), "metadata.model", errors, str(record_id))
+                _require_string(
+                    metadata.get("model"), "metadata.model", errors, str(record_id)
+                )
                 _require_string(
                     metadata.get("terms_reference"),
                     "metadata.terms_reference",
@@ -136,7 +165,9 @@ def validate_records(records: Iterable[dict[str, Any]]) -> list[str]:
                     str(record_id),
                 )
             if source == "deepseek_local":
-                _require_string(metadata.get("model"), "metadata.model", errors, str(record_id))
+                _require_string(
+                    metadata.get("model"), "metadata.model", errors, str(record_id)
+                )
                 _require_string(
                     metadata.get("license_reference"),
                     "metadata.license_reference",
@@ -144,8 +175,15 @@ def validate_records(records: Iterable[dict[str, Any]]) -> list[str]:
                     str(record_id),
                 )
             if source == "public_dataset":
-                _require_string(metadata.get("source_ref"), "metadata.source_ref", errors, str(record_id))
-                _require_string(metadata.get("license"), "metadata.license", errors, str(record_id))
+                _require_string(
+                    metadata.get("source_ref"),
+                    "metadata.source_ref",
+                    errors,
+                    str(record_id),
+                )
+                _require_string(
+                    metadata.get("license"), "metadata.license", errors, str(record_id)
+                )
             if source == "human":
                 _require_string(
                     metadata.get("permission_ref"),
@@ -212,20 +250,26 @@ def normalize_generated_examples(
     if not re.fullmatch(r"[A-Za-z0-9_-]+", batch_id):
         raise ValueError("batch_id must contain only letters, digits, '-' or '_'")
 
-    examples: Any = raw_response.get("examples") if isinstance(raw_response, dict) else raw_response
+    examples: Any = (
+        raw_response.get("examples") if isinstance(raw_response, dict) else raw_response
+    )
     if not isinstance(examples, list) or not examples:
         raise ValueError("model response must contain a non-empty examples array")
 
     if source == "deepseek_api":
         provenance = {"terms_reference": provenance_reference or DEEPSEEK_TERMS_URL}
     else:
-        provenance = {"license_reference": provenance_reference or DEEPSEEK_R1_LICENSE_URL}
+        provenance = {
+            "license_reference": provenance_reference or DEEPSEEK_R1_LICENSE_URL
+        }
 
     records: list[dict[str, Any]] = []
     for index, example in enumerate(examples, 1):
         if not isinstance(example, dict):
             raise ValueError(f"example {index} must be an object")
-        if not isinstance(example.get("input"), dict) or not isinstance(example.get("output"), dict):
+        if not isinstance(example.get("input"), dict) or not isinstance(
+            example.get("output"), dict
+        ):
             raise ValueError(f"example {index} must contain input and output objects")
         records.append(
             {

@@ -4,11 +4,11 @@ from app_ai.core.config import settings
 
 logger = get_logger(__name__)
 
-def translate_text(text: str, target_lang: str) -> str:
+def translate_text(text: str, target_lang: str, source_lang: str = None) -> str:
     if settings.AI_MOCK_MODE:
-        logger.info(f"MOCK: translate '{text}' to {target_lang}")
+        logger.info(f"MOCK: translate '{text}' to {target_lang} (source={source_lang})")
         return f"[mock_{target_lang}] {text}"
-    
+
     try:
         # Упрощённо: считаем, что исходный язык английский
         model, tokenizer = get_translation_model()

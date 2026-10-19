@@ -1,197 +1,148 @@
-# Контракты AI-сервиса
+# Контракты текстовых AI endpoint
 
-Базовый URL локального запуска: `http://localhost:8000`. Swagger доступен по
-`/docs`. В режиме по умолчанию `AI_PROVIDER=mock` сервис не вызывает внешние
-модели. Для LM Studio см. [локальный запуск](lm-studio-local.md).
+Документ фиксирует контракт версии `0.2.0` для `POST /translate` и
+`POST /assist`. Оба endpoint принимают JSON и возвращают одну модель
+`TextOperationResponse`.
 
-## Общий ответ `/translate` и `/assist`
-
-Оба текстовых endpoint возвращают одну схему:
+## Общий успешный ответ
 
 ```json
 {
-  "result": "готовый результат",
-  "original_text": "исходный текст",
-  "translated_text": null,
-  "source_lang": null,
-  "target_lang": null,
-  "action": "friendly"
+  "input_text": "Hello",
+  "result": "[mock en->ru] Hello",
+  "action": "translate",
+  "source_lang": "en",
+  "target_lang": "ru",
+  "correlation_id": "request-123",
+  "mock": true
 }
 ```
 
-Поля, которые не относятся к операции, имеют значение `null`. Для обратной
-совместимости перевод дублируется в `result` и `translated_text`.
+Поля `source_lang` и `target_lang` равны `null` для `/assist`. Поле `action`
+принимает `translate`, `shorten`, `formal` или `friendly`. Клиент может передать
+`X-Correlation-ID`; допустимы 1–128 латинских букв, цифр и символов `._:-`.
+Если заголовок отсутствует или некорректен, сервис создаёт UUID. Идентификатор
+возвращается в JSON и заголовке `X-Correlation-ID`.
 
-Ограничения для обоих endpoint:
+## POST /translate
 
-- текст не может быть пустым или состоять только из пробелов;
-- максимальная длина `text`, `prompt` и `context` — 5000 символов;
-- поддерживаются коды языков `ru`, `en`, `de`, `fr`, `es`, `zh`, `ar`.
-
-Ошибки входных данных возвращают HTTP 422:
-
-```json
-{
-  "detail": [{"field": "body.text", "message": "text must not be empty"}],
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Проверьте входные данные"
-  }
-}
-```
-
-## Перевод — `POST /translate`
-
-`Content-Type: application/json`
+Запрос:
 
 ```json
 {
-  "text": "Hello, how are you?",
+  "text": "Hello",
   "source_lang": "en",
   "target_lang": "ru"
 }
 ```
 
-Пример 200:
+- `text` — обязательная непустая строка, максимум 5000 символов после удаления
+  пробелов по краям.
+- `source_lang` — необязательный код языка; значение по умолчанию `auto`.
+- `target_lang` — обязательный поддерживаемый код языка. Значение `auto` здесь
+  запрещено.
+
+Mock-режим возвращает строку вида `[mock en->ru] Hello`. Он проверяет контракт,
+но не выполняет настоящий перевод и не определяет язык при `source_lang=auto`.
+
+## POST /assist
+
+Запрос:
 
 ```json
 {
-  "result": "Привет, как дела?",
-  "original_text": "Hello, how are you?",
-  "translated_text": "Привет, как дела?",
-  "source_lang": "en",
-  "target_lang": "ru",
-  "action": null
+  "text": "Send the report before Friday",
+  "action": "formal",
+  "context": "Business chat"
 }
 ```
+
+- `text` — обязательная непустая строка, максимум 5000 символов.
+- `action` — одно из значений `shorten`, `formal`, `friendly`.
+- `context` — необязательная строка длиной до 10000 символов.
+- Старое поле `prompt` временно принимается как алиас `text`. Новым клиентам
+  следует отправлять `text`.
+
+Поведение mock:
+
+- `shorten` оставляет строки до 160 символов без изменений, более длинные
+  обрезает до 160 символов с `...`;
+- `formal` добавляет маркер `[formal]`;
+- `friendly` добавляет маркер `[friendly]`.
+
+## Ошибки
+
+Некорректные поля возвращают HTTP 422:
+
+```json
+{
+  "error": {
+    "code": "validation_error",
+    "message": "Request validation failed",
+    "details": [
+      {
+        "field": "text",
+        "message": "Text must not be empty"
+      }
+    ]
+  },
+  "correlation_id": "8bb2c97d-539a-4264-989d-ed2435bc40e1"
+}
+```
+
+Когда `AI_MOCK_MODE=false`, а реальный AI-провайдер не подключён, сервис
+возвращает HTTP 503 с кодом `ai_provider_unavailable`. Внутренние ошибки
+сервера возвращают HTTP 500. Исходный текст и результат в логи не записываются;
+логи содержат только `correlation_id`, действие, языки, длины и длительность.
+
+## Локальный запуск
+
+Mock-режим включён по умолчанию и явно задан в Compose:
 
 ```bash
-curl -X POST http://localhost:8000/translate \
-  -H "Content-Type: application/json" \
-  -d '{"text":"Hello","source_lang":"en","target_lang":"ru"}'
+docker compose -f docker-compose.ai-only.yml up --build
 ```
 
-## Помощник — `POST /assist`
+Сервис доступен на `http://localhost:8000`, Swagger — на
+`http://localhost:8000/docs`.
 
-`Content-Type: application/json`. Допустимые действия: `shorten`, `formal`,
-`friendly`.
+## Ограничения качества
 
-```json
-{
-  "prompt": "Отправьте отчёт до 18:00.",
-  "context": "сообщение в командном чате",
-  "action": "friendly"
-}
-```
+- Mock-ответы детерминированы и предназначены только для разработки интеграции.
+- Mock не переводит текст, не определяет язык и не меняет стиль семантически.
+- `context` проходит валидацию, но mock-обработчик его не использует.
+- Сервис не гарантирует сохранение смысла, фактов, терминологии или тона до
+  подключения и отдельной оценки реальной модели.
+- Флаг `mock` обязателен в успешном ответе, поэтому клиент может исключить
+  mock-результат из пользовательского интерфейса и метрик качества.
 
-Пример 200:
+## Реальный локальный провайдер
 
-```json
-{
-  "result": "Коллеги, пожалуйста, отправьте отчёт до 18:00. Спасибо!",
-  "original_text": "Отправьте отчёт до 18:00.",
-  "translated_text": null,
-  "source_lang": null,
-  "target_lang": null,
-  "action": "friendly"
-}
-```
+Для LM Studio задайте `AI_MOCK_MODE=false`, `AI_PROVIDER=lmstudio`,
+`AI_BASE_URL=http://127.0.0.1:1234/v1` и `AI_MODEL` из
+`GET /v1/models`. `AI_API_KEY=lm-studio` используется как совместимый
+заголовок, а не как внешний секрет. Перевод, помощник и суммаризация используют
+один OpenAI-совместимый `/v1/chat/completions`. Ошибка провайдера возвращает
+HTTP 502; отсутствие настроенного провайдера при отключённом mock — HTTP 503.
 
-```bash
-curl -X POST http://localhost:8000/assist \
-  -H "Content-Type: application/json" \
-  -d '{"prompt":"Отправьте отчёт до 18:00.","action":"friendly"}'
-```
+## STT и суммаризация
 
-## Ошибки провайдера
-
-Если выбран `AI_PROVIDER=lmstudio`, но локальный сервер недоступен или вернул
-некорректный ответ, endpoint возвращает HTTP 502 и не раскрывает ключи:
-
-```json
-{
-  "detail": "LM Studio request failed: ...",
-  "error": {"code": "AI_PROVIDER_ERROR", "message": "AI provider failed"}
-}
-```
-
-События запросов, ошибок провайдера и валидации пишутся через стандартный
-Python logger. Текст сообщений и API-ключи в лог не попадают.
-
-## Распознавание речи — `POST /stt`
-
-`Content-Type: multipart/form-data`. Обязательное поле `audio` принимает WAV,
-MP3, WebM, OGG или M4A; поле `language` необязательное и по умолчанию равно
-`ru`. Максимальный размер файла задаётся `MAX_AUDIO_BYTES` и по умолчанию
-составляет 25 MiB.
-
-В режиме `STT_PROVIDER=mock` сервис возвращает детерминированный пример. Для
-рабочего контура используется любой OpenAI-совместимый Whisper endpoint:
+`POST /stt` принимает multipart-поле `audio` (WAV, MP3, WebM, OGG или
+M4A) и необязательный `language`. По умолчанию размер ограничен 25 MiB.
+Для рабочего режима используется OpenAI-совместимый Whisper:
 
 ```env
 STT_PROVIDER=openai_compatible
 STT_BASE_URL=http://whisper:9000/v1
 STT_MODEL=whisper-1
 STT_API_KEY=
-STT_TIMEOUT_SECONDS=120
 ```
 
-Пример успешного ответа:
+`POST /summary` (алиас `/summarize`) принимает от 1 до 100 сообщений
+`{sender_id, text, timestamp}` и возвращает `summary`, `decisions`,
+`participants`, `language` и `provider`. Mock и локальная модель
+возвращают детерминированный результат только для проверки интеграции.
 
-```json
-{
-  "transcript": "Распознанный текст",
-  "recognized_text": "Распознанный текст",
-  "summary": null,
-  "language": "ru",
-  "provider": "openai_compatible"
-}
-```
-
-Поле `recognized_text` оставлено для совместимости со старым клиентом. Краткое
-содержание строится отдельным endpoint `/summary`, а не внутри STT.
-
-## Суммаризация — `POST /summary` (алиас `POST /summarize`)
-
-`Content-Type: application/json`. Передаётся от 1 до 100 сообщений; текст каждого
-сообщения ограничен 5000 символами.
-
-```json
-{
-  "language": "ru",
-  "messages": [
-    {"sender_id": "u1", "text": "Перенесём релиз на четверг?", "timestamp": "2026-10-07T10:00:00Z"},
-    {"sender_id": "u2", "text": "Согласен, я проверю миграцию.", "timestamp": "2026-10-07T10:01:00Z"}
-  ]
-}
-```
-
-Пример ответа:
-
-```json
-{
-  "summary": "Релиз перенесён на четверг.",
-  "decisions": ["релиз в четверг"],
-  "participants": ["u1", "u2"],
-  "language": "ru",
-  "provider": "lmstudio"
-}
-```
-
-В `AI_PROVIDER=lmstudio` суммаризация использует тот же OpenAI-совместимый
-`/v1/chat/completions`, что и перевод с помощником. В mock-режиме внешний вызов
-не выполняется.
-
-Ошибки STT и summary:
-
-- `422` — пустой запрос, неизвестный язык или пустой список сообщений;
-- `413` — аудиофайл больше `MAX_AUDIO_BYTES`;
-- `415` — неподдерживаемый формат аудио;
-- `502` — провайдер недоступен, превысил таймаут или вернул неверный ответ.
-
-`POST /document-analysis` принимает `multipart/form-data` с `file` и пока
-возвращает демонстрационный анализ. `POST /secretary` принимает JSON с `action`
-и `details` и пока работает в mock-режиме.
-
-Подробности о подготовке данных, происхождении примеров и ограничениях
-качества находятся в [ai-training-dataset.md](ai-training-dataset.md).
+`POST /document-analysis` пока сохраняет демонстрационный ответ. Полная
+машиночитаемая схема находится в `docs/ai-api.yaml` и генерируется из
+FastAPI.

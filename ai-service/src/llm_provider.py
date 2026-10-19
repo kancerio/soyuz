@@ -170,7 +170,9 @@ class OpenAICompatibleSTTClient:
             payload = response.json()
             transcript = payload["text"]
         except (ValueError, KeyError, TypeError) as exc:
-            raise LLMProviderError("Speech provider returned an invalid transcript") from exc
+            raise LLMProviderError(
+                "Speech provider returned an invalid transcript"
+            ) from exc
         if not isinstance(transcript, str) or not transcript.strip():
             raise LLMProviderError("Speech provider returned an empty transcript")
         return transcript.strip()

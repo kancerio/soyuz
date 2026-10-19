@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "AI Service for Messenger",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "paths": {
     "/": {
@@ -41,67 +41,37 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AIResponse"
+                  "$ref": "#/components/schemas/TextOperationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           },
           "502": {
-            "description": "AI provider error"
-          },
-          "422": {
-            "description": "Validation Error",
+            "description": "AI provider error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/stt": {
-      "post": {
-        "summary": "Speech To Text",
-        "operationId": "speech_to_text_stt_post",
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_speech_to_text_stt_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/STTResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           },
-          "413": {
-            "description": "Audio payload is too large"
-          },
-          "415": {
-            "description": "Unsupported audio media type"
-          },
-          "502": {
-            "description": "Speech provider error"
-          },
-          "422": {
-            "description": "Validation Error",
+          "503": {
+            "description": "AI provider unavailable",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -129,20 +99,37 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AIResponse"
+                  "$ref": "#/components/schemas/TextOperationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           },
           "502": {
-            "description": "AI provider error"
-          },
-          "422": {
-            "description": "Validation Error",
+            "description": "AI provider error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AI provider unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -218,6 +205,53 @@
           },
           "502": {
             "description": "AI provider error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stt": {
+      "post": {
+        "summary": "Speech To Text",
+        "operationId": "speech_to_text_stt_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_speech_to_text_stt_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/STTResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Audio payload is too large"
+          },
+          "415": {
+            "description": "Unsupported audio media type"
+          },
+          "502": {
+            "description": "Speech provider error"
           },
           "422": {
             "description": "Validation Error",
@@ -309,80 +343,20 @@
   },
   "components": {
     "schemas": {
-      "AIResponse": {
-        "properties": {
-          "result": {
-            "type": "string",
-            "title": "Result"
-          },
-          "original_text": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Original Text"
-          },
-          "translated_text": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Translated Text"
-          },
-          "source_lang": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Lang"
-          },
-          "target_lang": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Target Lang"
-          },
-          "action": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Action"
-          }
-        },
-        "type": "object",
-        "required": [
-          "result"
-        ],
-        "title": "AIResponse",
-        "description": "Common response shape for text AI endpoints."
-      },
       "AssistRequest": {
         "properties": {
-          "prompt": {
+          "text": {
             "type": "string",
-            "title": "Prompt"
+            "title": "Text"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "shorten",
+              "formal",
+              "friendly"
+            ],
+            "title": "Action"
           },
           "context": {
             "anyOf": [
@@ -394,20 +368,12 @@
               }
             ],
             "title": "Context"
-          },
-          "action": {
-            "type": "string",
-            "enum": [
-              "shorten",
-              "formal",
-              "friendly"
-            ],
-            "title": "Action"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
-          "prompt",
+          "text",
           "action"
         ],
         "title": "AssistRequest"
@@ -455,6 +421,67 @@
           "audio"
         ],
         "title": "Body_speech_to_text_stt_post"
+      },
+      "ErrorContent": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "details": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": "array",
+            "title": "Details",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorContent"
+      },
+      "ErrorDetail": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "message"
+        ],
+        "title": "ErrorDetail"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorContent"
+          },
+          "correlation_id": {
+            "type": "string",
+            "title": "Correlation Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error",
+          "correlation_id"
+        ],
+        "title": "ErrorResponse"
       },
       "HTTPValidationError": {
         "properties": {
@@ -640,6 +667,67 @@
         ],
         "title": "SummaryResponse"
       },
+      "TextOperationResponse": {
+        "properties": {
+          "input_text": {
+            "type": "string",
+            "title": "Input Text"
+          },
+          "result": {
+            "type": "string",
+            "title": "Result"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "translate",
+              "shorten",
+              "formal",
+              "friendly"
+            ],
+            "title": "Action"
+          },
+          "source_lang": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Lang"
+          },
+          "target_lang": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Lang"
+          },
+          "correlation_id": {
+            "type": "string",
+            "title": "Correlation Id"
+          },
+          "mock": {
+            "type": "boolean",
+            "title": "Mock"
+          }
+        },
+        "type": "object",
+        "required": [
+          "input_text",
+          "result",
+          "action",
+          "correlation_id",
+          "mock"
+        ],
+        "title": "TextOperationResponse"
+      },
       "TranslateRequest": {
         "properties": {
           "text": {
@@ -648,17 +736,18 @@
           },
           "source_lang": {
             "type": "string",
-            "title": "Source Lang"
+            "title": "Source Lang",
+            "default": "auto"
           },
           "target_lang": {
             "type": "string",
             "title": "Target Lang"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "text",
-          "source_lang",
           "target_lang"
         ],
         "title": "TranslateRequest"

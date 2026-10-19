@@ -36,9 +36,11 @@ GPU-среда. Он сохраняет LoRA-адаптер, а не готов�
 
 ## Запуск AI-сервиса с локальным провайдером
 
-В `ai-service/.env` задайте:
+В `ai-service/.env` задайте. Важно отключить mock, иначе Compose оставит
+детерминированный ответ и до LM Studio запрос не дойдёт:
 
 ```env
+AI_MOCK_MODE=false
 AI_PROVIDER=lmstudio
 AI_BASE_URL=http://127.0.0.1:1234/v1
 AI_MODEL=<id из /v1/models>

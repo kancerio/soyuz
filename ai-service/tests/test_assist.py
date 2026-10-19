@@ -1,94 +1,110 @@
 import pytest
 from fastapi.testclient import TestClient
+
 import src.main as main
-from src.main import app
+from src.main import MAX_TEXT_LENGTH, app
 
 client = TestClient(app)
+EXPECTED_RESPONSE_FIELDS = {
+    "input_text",
+    "result",
+    "action",
+    "source_lang",
+    "target_lang",
+    "correlation_id",
+    "mock",
+}
 
-def test_assist_shorten():
-    payload = {
-        "prompt": "This is a very long text that needs to be shortened to a few words.",
-        "action": "shorten"
-    }
-    response = client.post("/assist", json=payload)
+
+@pytest.mark.parametrize(
+    ("action", "expected_result"),
+    [
+        ("shorten", "A short message"),
+        ("formal", "[formal] A short message"),
+        ("friendly", "[friendly] A short message"),
+    ],
+)
+def test_assist_actions_use_shared_contract(monkeypatch, action, expected_result):
+    monkeypatch.setenv("AI_MOCK_MODE", "true")
+    response = client.post(
+        "/assist", json={"text": "A short message", "action": action}
+    )
+
     assert response.status_code == 200
     data = response.json()
-    assert "result" in data
-    assert "Кратко:" in data["result"]
+    assert set(data) == EXPECTED_RESPONSE_FIELDS
+    assert data["input_text"] == "A short message"
+    assert data["result"] == expected_result
+    assert data["action"] == action
+    assert data["source_lang"] is None
+    assert data["target_lang"] is None
+    assert data["correlation_id"]
+    assert data["mock"] is True
 
-def test_assist_formal():
-    payload = {
-        "prompt": "You are stupid.",
-        "action": "formal"
-    }
-    response = client.post("/assist", json=payload)
+
+def test_assist_shorten_truncates_long_text(monkeypatch):
+    monkeypatch.setenv("AI_MOCK_MODE", "true")
+    text = "word " * 40
+    response = client.post("/assist", json={"text": text, "action": "shorten"})
+
     assert response.status_code == 200
-    data = response.json()
-    assert "Формально:" in data["result"]
+    assert len(response.json()["result"]) <= 160
+    assert response.json()["result"].endswith("...")
 
 
-def test_assist_uses_lm_studio_when_configured(monkeypatch):
+def test_assist_accepts_legacy_prompt_field(monkeypatch):
+    monkeypatch.setenv("AI_MOCK_MODE", "true")
+    response = client.post(
+        "/assist", json={"prompt": "Legacy client text", "action": "friendly"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["input_text"] == "Legacy client text"
+
+
+def test_assist_uses_configured_lm_studio(monkeypatch):
     class FakeClient:
         async def complete(self, messages, **kwargs):
             assert "friendly" in messages[-1]["content"]
-            return "Привет! Буду рад помочь."
+            return "Готовый дружелюбный текст"
 
+    monkeypatch.setenv("AI_MOCK_MODE", "false")
     monkeypatch.setenv("AI_PROVIDER", "lmstudio")
-    monkeypatch.setattr(main, "get_llm_client", lambda: FakeClient(), raising=False)
+    monkeypatch.setattr(main, "get_llm_client", lambda: FakeClient())
 
     response = client.post(
         "/assist",
-        json={"prompt": "Помоги с задачей", "action": "friendly"},
+        json={"text": "Помоги с задачей", "action": "friendly"},
     )
 
     assert response.status_code == 200
-    assert response.json()["result"] == "Привет! Буду рад помочь."
+    assert response.json()["result"] == "Готовый дружелюбный текст"
+    assert response.json()["mock"] is False
 
 
-def test_assist_response_uses_same_result_contract():
-    response = client.post(
-        "/assist",
-        json={"prompt": "Сделай мягче", "action": "friendly"},
-    )
+@pytest.mark.parametrize(
+    ("payload", "field", "message"),
+    [
+        ({"text": "   ", "action": "shorten"}, "text", "Text must not be empty"),
+        (
+            {"text": "x" * (MAX_TEXT_LENGTH + 1), "action": "shorten"},
+            "text",
+            "at most 5000 characters",
+        ),
+        (
+            {"text": "Hello", "action": "change_tone"},
+            "action",
+            "shorten",
+        ),
+    ],
+)
+def test_assist_rejects_invalid_input(payload, field, message):
+    response = client.post("/assist", json=payload)
 
-    assert response.status_code == 200
+    assert response.status_code == 422
     body = response.json()
-    assert set(body) == {
-        "result",
-        "original_text",
-        "translated_text",
-        "source_lang",
-        "target_lang",
-        "action",
-    }
-    assert body["action"] == "friendly"
-
-
-def test_assist_rejects_unknown_action():
-    response = client.post(
-        "/assist",
-        json={"prompt": "Текст", "action": "change_tone"},
+    assert body["error"]["code"] == "validation_error"
+    assert any(
+        detail["field"] == field and message in detail["message"]
+        for detail in body["error"]["details"]
     )
-
-    assert response.status_code == 422
-    assert "shorten" in response.text
-
-
-def test_assist_rejects_empty_prompt():
-    response = client.post(
-        "/assist",
-        json={"prompt": " ", "action": "shorten"},
-    )
-
-    assert response.status_code == 422
-    assert "prompt" in response.text
-
-
-def test_assist_rejects_prompt_over_limit():
-    response = client.post(
-        "/assist",
-        json={"prompt": "x" * 5001, "action": "shorten"},
-    )
-
-    assert response.status_code == 422
-    assert "5000" in response.text

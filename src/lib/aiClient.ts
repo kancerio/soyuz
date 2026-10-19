@@ -1,10 +1,11 @@
 export interface AIResponse {
+  input_text: string;
   result: string;
-  original_text?: string | null;
-  translated_text?: string | null;
-  source_lang?: string | null;
-  target_lang?: string | null;
-  action?: string | null;
+  action: 'translate' | 'shorten' | 'formal' | 'friendly';
+  source_lang: string | null;
+  target_lang: string | null;
+  correlation_id: string;
+  mock: boolean;
 }
 
 export interface SummaryResponse {
@@ -67,7 +68,7 @@ export const aiClient = {
     }),
 
   assist: (payload: {
-    prompt: string;
+    text: string;
     action: 'shorten' | 'formal' | 'friendly';
     context?: string;
   }) =>
