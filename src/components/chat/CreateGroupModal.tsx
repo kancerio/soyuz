@@ -20,7 +20,7 @@ export default function CreateGroupModal({ isOpen, onClose, onGroupCreated }: Cr
   const [selected, setSelected] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
+
 
   useEffect(() => {
     if (isOpen) {

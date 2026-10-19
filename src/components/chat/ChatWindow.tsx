@@ -341,7 +341,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <AIToolsPanel />
+      <AIToolsPanel messages={messages} onTranscript={setNewMessage} />
 
       {/* Верхняя панель */}
       <div className="p-2 border-b dark:border-gray-700 flex justify-between items-center">

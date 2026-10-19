@@ -13,7 +13,7 @@ let currentUser = null;
 
 socket.on('connect', () => {
   console.log('✅ Connected to server');
-  
+
   // Аутентификация
   console.log(`📢 Authenticating as user ${TEST_USER_ID}`);
   socket.emit('auth', { userId: TEST_USER_ID });
@@ -22,7 +22,7 @@ socket.on('connect', () => {
 socket.on('auth_success', (data) => {
   console.log('✅ Auth success:', data);
   currentUser = data.userId;
-  
+
   // Отправляем тестовое сообщение
   setTimeout(() => {
     console.log('📢 Sending test message...');
@@ -75,7 +75,7 @@ setTimeout(() => {
   if (currentUser) {
     console.log('📢 Sending typing indicator...');
     socket.emit('typing', { chatId: TEST_CHAT_ID, isTyping: true });
-    
+
     setTimeout(() => {
       socket.emit('typing', { chatId: TEST_CHAT_ID, isTyping: false });
     }, 2000);

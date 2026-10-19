@@ -15,33 +15,33 @@ SUPPORTED_LANGUAGES = {"ru", "en", "de", "fr", "es", "zh", "ar"}
 @router.post("/", response_model=TranslateResponse)
 async def translate(req: TranslateRequest):
     start_time = time.time()
-    
+
     # 1. Проверка на пустой текст
     if not req.text or not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
-    
+
     # 2. Проверка целевого языка
     if req.target_lang not in SUPPORTED_LANGUAGES:
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported target language: {req.target_lang}. Supported: {', '.join(SUPPORTED_LANGUAGES)}"
         )
-    
+
     # 3. Генерация correlation_id, если не передан
     correlation_id = req.correlation_id or str(uuid.uuid4())
-    
+
     # 4. Вызов сервиса перевода (пока mock)
     try:
         translated = translate_text(req.text, req.target_lang, source_lang=req.source_lang)
         duration_ms = int((time.time() - start_time) * 1000)
-        
+
         # Логирование (подробнее в шаге 2)
         logger.info(
             f"Translation success | correlation_id={correlation_id} | "
             f"source={req.source_lang or 'auto'} | target={req.target_lang} | "
             f"duration_ms={duration_ms}"
         )
-        
+
         return TranslateResponse(
             translated_text=translated,
             source_lang_detected=req.source_lang or "en",  # заглушка

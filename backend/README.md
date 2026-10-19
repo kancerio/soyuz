@@ -19,7 +19,7 @@ npm run start:dev
 ## API документация
 
 ### REST API
-Базовый URL: `http://localhost:3000`
+Базовый URL: `http://localhost:3001`
 
 | Метод | URL | Описание |
 |-------|-----|----------|
@@ -29,7 +29,7 @@ npm run start:dev
 | GET | `/messages/chat/:chatId` | История сообщений |
 
 ### WebSocket
-Подключение: `ws://localhost:3000`
+Подключение: `ws://localhost:3001`
 
 События описаны в integration checklist.
 

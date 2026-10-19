@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+import src.main as main
 from src.main import MAX_TEXT_LENGTH, app
 
 client = TestClient(app)
@@ -59,6 +60,26 @@ def test_assist_accepts_legacy_prompt_field(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["input_text"] == "Legacy client text"
+
+
+def test_assist_uses_configured_lm_studio(monkeypatch):
+    class FakeClient:
+        async def complete(self, messages, **kwargs):
+            assert "friendly" in messages[-1]["content"]
+            return "Готовый дружелюбный текст"
+
+    monkeypatch.setenv("AI_MOCK_MODE", "false")
+    monkeypatch.setenv("AI_PROVIDER", "lmstudio")
+    monkeypatch.setattr(main, "get_llm_client", lambda: FakeClient())
+
+    response = client.post(
+        "/assist",
+        json={"text": "Помоги с задачей", "action": "friendly"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["result"] == "Готовый дружелюбный текст"
+    assert response.json()["mock"] is False
 
 
 @pytest.mark.parametrize(
