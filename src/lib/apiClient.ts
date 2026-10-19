@@ -254,4 +254,40 @@ export const apiClient = {
       body: JSON.stringify({ text, action }),
     });
   },
+
+  /**
+   * Mock отправки голосового. Когда бэк будет готов —
+   * заменить на multipart POST /messages/chat/:chatId/voice
+   */
+  sendVoiceMessage: async (
+    chatId: number,
+    file: Blob,
+    meta: { durationMs: number; mimeType: string }
+  ): Promise<{
+    id: number;
+    chatId: number;
+    userId: number;
+    audioUrl: string;
+    durationMs: number;
+    mimeType: string;
+  }> => {
+    // симуляция сети
+    await new Promise((r) => setTimeout(r, 1200 + Math.random() * 800));
+
+    // ~10% шанс ошибки для проверки retry (убери, если мешает)
+    // if (Math.random() < 0.1) throw new Error('Ошибка загрузки');
+
+    const fakeId = Date.now();
+    // пока отдаём blob-url как audioUrl; бэк вернёт настоящий URL
+    const audioUrl = URL.createObjectURL(file);
+
+    return {
+      id: fakeId,
+      chatId,
+      userId: 0, // маппится на фронте
+      audioUrl,
+      durationMs: meta.durationMs,
+      mimeType: meta.mimeType,
+    };
+  },
 };
