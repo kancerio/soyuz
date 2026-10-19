@@ -1,19 +1,90 @@
+export type TranslateStatus = 'pending' | 'completed' | 'failed' | 'skipped';
+
+export type MessageType = 'text' | 'voice';
+
+export type TranscriptStatus =
+  | 'pending'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'skipped';
+
+export type SummaryStatus =
+  | 'pending'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'not_needed';
+
+export type UploadStatus =
+  | 'idle'
+  | 'uploading'
+  | 'uploaded'
+  | 'error'
+  | 'cancelled';
+
+export interface VoiceMetadata {
+  durationMs: number;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export interface Message {
-  id: string;
-  chatId: string;
-  text: string;
-  senderId: string;
+  // --- Базовые ---
+  id: number;
+  content: string;
+  senderId: number;
+  chatId: number;
   timestamp: Date;
-  status: 'sent' | 'delivered' | 'read';
+  isEdited?: boolean;
+  isDeleted?: boolean;
+
+  // --- Доставка / прочтение ---
+  isDelivered?: boolean;
+  isRead?: boolean;
+  readAt?: string | null;
+
+  // --- AI перевод ---
+  originalText?: string | null;
+  sourceLang?: string | null;
+  translatedText?: string | null;
+  targetLang?: string | null;
+  translateStatus?: TranslateStatus;
+
+  // --- Локальный статус отправки (только на фронте) ---
+  localStatus?: 'sending' | 'sent' | 'delivered' | 'read';
+
+  // --- Voice ---
+  type?: MessageType;
+  audioUrl?: string | null;
+  localAudioUrl?: string | null;
+  transcript?: string | null;
+  transcriptStatus?: TranscriptStatus;
+  summary?: string | null;
+  summaryStatus?: SummaryStatus;
+  voiceMetadata?: VoiceMetadata | null;
+  uploadStatus?: UploadStatus;
 }
 
 export interface Chat {
-  id: string;
-  name: string;
-  type: 'personal' | 'group';
-  avatar?: string;
-  lastMessage?: string;
-  lastMessageTime?: Date;
-  unreadCount: number;
-  participants: string[];
+  id: number;
+  title: string | null;
+  isGroup: boolean;
+  createdAt: Date;
 }
+
+/** WebSocket: transcript готов / ошибка */
+export type MessageTranscribedPayload = {
+  messageId: number;
+  chatId: number;
+  transcript: string;
+  transcriptStatus: 'completed' | 'failed';
+};
+
+/** WebSocket: voice summary готов / ошибка / не нужен */
+export type MessageVoiceSummaryPayload = {
+  messageId: number;
+  chatId: number;
+  summary: string;
+  summaryStatus: 'completed' | 'failed' | 'not_needed';
+};

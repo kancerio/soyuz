@@ -28,5 +28,5 @@ npm run start:dev
 
 - POST /ai/translate - перевод сообщений
 - POST /ai/stt - распознавание речи
-- POST /ai/summarize - суммаризация чата
+- POST /ai/summarize - суммаризация чата (AI-сервис принимает `/summary` и совместимый алиас `/summarize`)
 - POST /ai/analyze - анализ документов

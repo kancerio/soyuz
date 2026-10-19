@@ -167,7 +167,7 @@ async leaveChat(chatId: number, userId: number): Promise<void> {
 
   // Получаем роль пользователя
   const role = await this.getUserRole(chatId, userId);
-  
+
   // Владелец не может выйти из чата
   if (role === 'owner') {
     throw new ForbiddenException('Владелец не может выйти из чата. Сначала передайте права владельца.');
