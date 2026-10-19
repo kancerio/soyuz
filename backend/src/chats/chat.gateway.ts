@@ -7,9 +7,12 @@ import {
   ConnectedSocket,
   MessageBody,
 } from '@nestjs/websockets';
+import { Optional } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { ChatsService } from './chats.service';
 import { MessagesService } from '../messages/messages.service';
+import { Message } from '../messages/message.entity';
 import { logger } from '../common/logger';
 import { OnEvent } from '@nestjs/event-emitter';
 
@@ -30,6 +33,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private chatsService: ChatsService,
     private messagesService: MessagesService,
+    @Optional() private jwtService?: JwtService,
   ) {
     logger.info('ChatGateway initialized', { component: 'ChatGateway', event: 'init' });
 
@@ -88,11 +92,42 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('auth')
   async handleAuth(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { userId: number },
+    @MessageBody() data: { token?: string; userId?: number },
   ) {
-    const { userId } = data;
     const startTime = Date.now();
-    const clientIp = client.handshake.address || client.conn.remoteAddress;
+    const clientIp = client.handshake.address || (client.conn as any)?.remoteAddress;
+
+    let userId: number | undefined;
+    const rawToken = data?.token || (client.handshake?.auth?.token as string);
+
+    if (rawToken && this.jwtService) {
+      try {
+        const cleanToken = rawToken.replace(/^Bearer\s+/i, '');
+        const payload = this.jwtService.verify(cleanToken);
+        userId = Number(payload.sub || payload.userId);
+      } catch (err) {
+        logger.warn('Auth failed - invalid JWT token', {
+          event: 'auth_failed',
+          socket_id: client.id,
+          reason: 'invalid_token',
+          error: err.message,
+          timestamp: new Date().toISOString(),
+        });
+        client.emit('auth_error', { message: 'Invalid or expired token' });
+        return;
+      }
+    } else if (data?.userId && (!this.jwtService || process.env.NODE_ENV === 'test')) {
+      userId = Number(data.userId);
+    } else {
+      logger.warn('Auth failed - missing token', {
+        event: 'auth_failed',
+        socket_id: client.id,
+        reason: 'missing_token',
+        timestamp: new Date().toISOString(),
+      });
+      client.emit('auth_error', { message: 'Authentication token required' });
+      return;
+    }
 
     logger.info('Auth attempt', {
       event: 'auth_attempt',
@@ -106,7 +141,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.userToSocket.set(userId, client.id);
 
     const chats = await this.chatsService.getUserChats(userId);
-    const chatIds = chats.map(chat => chat.id);
+    const chatIds = chats.map((chat) => chat.id);
 
     for (const chatId of chatIds) {
       const roomName = `chat_${chatId}`;
@@ -224,10 +259,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('send_message')
   async handleSendMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { chatId: number; content: string },
+    @MessageBody() data: { chatId: number; content: string; sourceLang?: string; targetLang?: string },
   ) {
     const startTime = Date.now();
-    const { chatId, content } = data;
+    const { chatId, content, sourceLang, targetLang } = data;
     const userId = this.socketToUser.get(client.id);
 
     if (!userId) {
@@ -235,42 +270,28 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    const isParticipant = await this.chatsService.isParticipant(chatId, userId);
-    if (!isParticipant) {
-      client.emit('error', { message: 'You are not a participant of this chat' });
-      return;
-    }
-
     try {
-      // Сохраняем сообщение с переводом (перевод в фоне)
+      // Сохранение, валидация участника и рассылка new_message через единое событие message.created
       const message = await this.messagesService.sendMessageWithTranslation(
         chatId,
         userId,
         content,
-        'auto',
-        'en',
+        sourceLang,
+        targetLang,
       );
 
-      await this.messagesService.markAsDelivered(message.id, userId);
-
-      const dbSaveTime = Date.now() - startTime;
-
-      // Рассылаем сообщение всем в комнате (с оригиналом, перевод придёт позже)
-      this.server.to(`chat_${chatId}`).emit('new_message', message);
-
       const totalTime = Date.now() - startTime;
-
-      logger.info('Message sent', {
+      logger.info('Message sent via WebSocket', {
         event: 'send_message',
         message_id: message.id,
         user_id: userId,
         chat_id: chatId,
         content_length: content.length,
-        db_save_ms: dbSaveTime,
-        broadcast_ms: totalTime - dbSaveTime,
         total_ms: totalTime,
         timestamp: new Date().toISOString(),
       });
+
+      return { success: true, message };
     } catch (error) {
       logger.error('Send message error', {
         event: 'send_message_error',
@@ -525,6 +546,28 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
+  // ========== СОБЫТИЕ СОЗДАНИЯ СООБЩЕНИЯ (ЕДИНЫЙ ИСТОЧНИК ДЛЯ REST И WS) ==========
+
+  @OnEvent('message.created')
+  handleMessageCreated(message: Message) {
+    const roomName = `chat_${message.chatId}`;
+    const senderSocketId = this.userToSocket.get(message.userId);
+    const senderSocket = senderSocketId ? this.server?.sockets?.sockets?.get(senderSocketId) : null;
+
+    if (senderSocket && typeof senderSocket.to === 'function') {
+      senderSocket.to(roomName).emit('new_message', message);
+    } else {
+      this.server.to(roomName).emit('new_message', message);
+    }
+
+    logger.info('Message broadcast', {
+      event: 'broadcast_new_message',
+      message_id: message.id,
+      chat_id: message.chatId,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   // ========== СОБЫТИЕ ПЕРЕВОДА ==========
 
   @OnEvent('message.translated')
@@ -541,6 +584,44 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       message_id: payload.messageId,
       chat_id: payload.chatId,
       translate_status: payload.translateStatus,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // ========== СОБЫТИЯ ГОЛОСОВЫХ СООБЩЕНИЙ: ТРАНСКРИПЦИЯ И РЕЗЮМЕ (ЗАДАЧА 5) ==========
+
+  @OnEvent('message.transcribed')
+  handleMessageTranscribed(payload: {
+    messageId: number;
+    chatId: number;
+    transcript: string;
+    sttStatus: string;
+  }) {
+    this.server.to(`chat_${payload.chatId}`).emit('message_transcribed', payload);
+
+    logger.info('Message transcribed broadcast', {
+      event: 'message_transcribed',
+      message_id: payload.messageId,
+      chat_id: payload.chatId,
+      stt_status: payload.sttStatus,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  @OnEvent('message.voice_summary')
+  handleMessageVoiceSummary(payload: {
+    messageId: number;
+    chatId: number;
+    voiceSummary: string;
+    summaryStatus: string;
+  }) {
+    this.server.to(`chat_${payload.chatId}`).emit('message_voice_summary', payload);
+
+    logger.info('Message voice summary broadcast', {
+      event: 'message_voice_summary',
+      message_id: payload.messageId,
+      chat_id: payload.chatId,
+      summary_status: payload.summaryStatus,
       timestamp: new Date().toISOString(),
     });
   }

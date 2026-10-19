@@ -1,8 +1,26 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Request,
+  UseInterceptors,
+  UploadedFile,
+  Res,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { MessagesService } from './messages.service';
 import { ChatsService } from '../chats/chats.service';
 import { AssistDto } from './dto/assist.dto';
+import { SendMessageDto } from './dto/send-message.dto';
+import { EditMessageDto } from './dto/edit-message.dto';
 
 @Controller('messages')
 @UseGuards(AuthGuard('jwt'))
@@ -29,15 +47,49 @@ export class MessagesController {
   async sendMessage(
     @Request() req,
     @Param('chatId') chatId: string,
-    @Body() body: { content: string; sourceLang?: string; targetLang?: string },
+    @Body() body: SendMessageDto,
   ) {
     return this.messagesService.sendMessageWithTranslation(
       +chatId,
       req.user.userId,
       body.content,
-      body.sourceLang || 'auto',
-      body.targetLang || 'en',
+      body.sourceLang,
+      body.targetLang,
     );
+  }
+
+  @Post('chat/:chatId/voice')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 20 * 1024 * 1024 },
+    }),
+  )
+  async sendVoiceMessage(
+    @Request() req,
+    @Param('chatId') chatId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('duration') duration?: string,
+  ) {
+    return this.messagesService.sendVoiceMessage(
+      +chatId,
+      req.user.userId,
+      file,
+      duration ? +duration : null,
+    );
+  }
+
+  @Get('voice/:fileId')
+  async getVoiceFile(
+    @Request() req,
+    @Param('fileId') fileId: string,
+    @Res() res: Response,
+  ) {
+    const { filePath, mimeType } = await this.messagesService.getVoiceFile(
+      fileId,
+      req.user.userId,
+    );
+    res.setHeader('Content-Type', mimeType);
+    return res.sendFile(filePath);
   }
 
   @Post('assist')
@@ -49,7 +101,7 @@ async assist(@Body() body: AssistDto) {
   async editMessage(
     @Request() req,
     @Param('messageId') messageId: string,
-    @Body() body: { content: string },
+    @Body() body: EditMessageDto,
   ) {
     return this.messagesService.editMessage(+messageId, req.user.userId, body.content);
   }
