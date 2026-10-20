@@ -42,11 +42,12 @@ npm run build
 ```
 
 The suite includes the frontend API client and voice utility tests. The latest
-run passed **56 tests in 15 suites**. Whole-backend coverage was 50.35% of
-statements; on the AI/message/controller files changed for this work it was
-69.77% of statements and 60.46% of functions. The CI workflow uploads the
-coverage output as an artifact. It also builds the frontend and backend and
-keeps the existing AI tests and Docker build.
+run passed **57 tests in 15 suites**. Whole-backend coverage was 50.65% of
+statements, 49.05% of branches, and 50.37% of lines. On the AI/message/controller
+files changed for this work, coverage was 69.77% of statements and 60.46% of
+functions. The CI workflow uploads the coverage output as an artifact. It also
+builds the frontend and backend and keeps the existing AI tests and Docker
+build.
 
 The local frontend production build passed with `node
 node_modules/next/dist/bin/next build`.
@@ -112,8 +113,18 @@ speaker labels. A larger corpus of reviewed, task-specific examples is still
 needed for a meaningful quality benchmark.
 
 The live provider smoke test exercised the real backend `TranslationService`
-against real LM Studio and Whisper. A full browser-to-Nest HTTP session was not
-run in this environment: the local Postgres/Redis ports were closed and the
-Docker Desktop engine was not running. Frontend API routing is covered by unit
-tests and the frontend production build; database-backed end-to-end validation
-still requires starting the application dependencies.
+against real LM Studio and Whisper. The application was then started with
+PostgreSQL and Redis in Docker and exercised over its HTTP API using an isolated
+`soyuz_validation` database. The legacy camelCase `userId/chatId` schema was
+reproduced in that disposable database; startup exposed a migration mismatch,
+which is fixed by renaming those columns to the snake_case names used by the
+`Message` entity and adding missing delivery-state columns. The project's
+existing `messenger_db` volume was not modified.
+
+Authenticated HTTP checks through NestJS all succeeded with the live local
+providers: `/messages/translate` returned a Russian translation,
+`/messages/assist` returned a formal rewrite, `/messages/summary` returned a
+short summary, and `/messages/transcribe` recognized a locally synthesized
+Russian sample. Invalid empty translation text, an unsupported assist action,
+and an empty summary each returned HTTP 400. This validates backend-to-AI
+integration; it does not replace a browser UI acceptance pass.

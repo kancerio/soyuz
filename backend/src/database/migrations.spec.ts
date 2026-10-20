@@ -14,6 +14,10 @@ describe('TypeORM Migrations (Задача 3)', () => {
         executedQueries.push(sql);
         return [];
       }),
+      hasColumn: jest.fn().mockImplementation(async (_table: string, column: string) =>
+        ['chatId', 'userId'].includes(column),
+      ),
+      renameColumn: jest.fn().mockResolvedValue(undefined),
     };
   });
 
@@ -30,6 +34,13 @@ describe('TypeORM Migrations (Задача 3)', () => {
       expect(combinedQueries).toContain('CREATE TABLE IF NOT EXISTS messages');
       expect(combinedQueries).toContain('idx_messages_chat_id');
       expect(combinedQueries).toContain('idx_messages_user_id');
+    });
+
+    it('up должен приводить legacy camelCase внешние ключи к именам, используемым сущностью Message', async () => {
+      await migration.up(mockQueryRunner as QueryRunner);
+
+      expect(mockQueryRunner.renameColumn).toHaveBeenCalledWith('messages', 'chatId', 'chat_id');
+      expect(mockQueryRunner.renameColumn).toHaveBeenCalledWith('messages', 'userId', 'user_id');
     });
 
     it('down должен безопасно удалять таблицы в обратном порядке', async () => {
