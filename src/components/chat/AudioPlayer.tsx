@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatDuration } from '@/lib/voiceUtils';
+import { apiClient } from '@/lib/apiClient';
 
 interface AudioPlayerProps {
   /** URL для воспроизведения (blob: или https:) */
@@ -26,6 +27,46 @@ export default function AudioPlayer({
   const [currentMs, setCurrentMs] = useState(0);
   const [durationMs, setDurationMs] = useState(durationMsProp ?? 0);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [playbackSrc, setPlaybackSrc] = useState<string | null>(src ?? null);
+
+  useEffect(() => {
+    if (!src) {
+      setPlaybackSrc(null);
+      return;
+    }
+    if (src.startsWith('blob:') || src.startsWith('data:')) {
+      setPlaybackSrc(src);
+      return;
+    }
+
+    const match = src.match(/\/messages\/voice\/([^/?]+)/);
+    if (!match) {
+      setPlaybackSrc(src);
+      return;
+    }
+
+    let active = true;
+    let objectUrl: string | null = null;
+    setPlaybackSrc(null);
+    setStatus('loading');
+    apiClient
+      .getVoiceAudio(decodeURIComponent(match[1]))
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setPlaybackSrc(objectUrl);
+      })
+      .catch(() => {
+        if (!active) return;
+        setStatus('error');
+        setErrorText('Файл недоступен');
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [src]);
 
   // сброс при смене src
   useEffect(() => {
@@ -41,7 +82,7 @@ export default function AudioPlayer({
 
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !src) return;
+    if (!audio || !playbackSrc) return;
 
     const onLoadedMetadata = () => {
       const d = audio.duration;
@@ -92,11 +133,11 @@ export default function AudioPlayer({
       audio.removeEventListener('error', onError);
       audio.removeEventListener('canplay', onCanPlay);
     };
-  }, [src]);
+  }, [playbackSrc]);
 
   const togglePlay = useCallback(async () => {
     const audio = audioRef.current;
-    if (!audio || !src || status === 'error') return;
+    if (!audio || !playbackSrc || status === 'error') return;
 
     try {
       if (status === 'playing') {
@@ -109,7 +150,7 @@ export default function AudioPlayer({
       setStatus('error');
       setErrorText('Файл недоступен');
     }
-  }, [src, status]);
+  }, [playbackSrc, status]);
 
   const onSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const audio = audioRef.current;
@@ -142,7 +183,7 @@ export default function AudioPlayer({
 
   return (
     <div className={`flex items-center gap-2 min-w-0 ${compact ? 'text-sm' : ''} ${className}`}>
-      <audio ref={audioRef} src={src} preload="metadata" className="hidden" />
+      <audio ref={audioRef} src={playbackSrc ?? undefined} preload="metadata" className="hidden" />
 
       <button
         type="button"

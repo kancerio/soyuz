@@ -108,7 +108,7 @@ describe('ChatGateway - Realtime Unified Events (Задача 1)', () => {
         messageId: 42,
         chatId: 7,
         transcript: 'Привет, это расшифровка',
-        sttStatus: 'completed',
+        transcriptStatus: 'completed',
       };
 
       gateway.handleMessageTranscribed(payload);
@@ -122,7 +122,7 @@ describe('ChatGateway - Realtime Unified Events (Задача 1)', () => {
       const payload = {
         messageId: 42,
         chatId: 7,
-        voiceSummary: 'Краткая выжимка',
+        summary: 'Краткая выжимка',
         summaryStatus: 'completed',
       };
 

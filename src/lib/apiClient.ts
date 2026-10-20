@@ -2,7 +2,7 @@ import { Chat, Message, TranslateStatus } from '@/types/chat';
 import { User } from '@/types/user';
 import { mockGroupStore } from './mockGroupStore';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
@@ -18,6 +18,15 @@ export interface AssistResponse {
   action: 'shorten' | 'formal' | 'friendly';
   status: 'completed' | 'failed';
   mock: boolean;
+}
+
+export interface SummaryResponse {
+  summary: string;
+  decisions: string[];
+  participants: string[];
+  language: string;
+  provider: string;
+  status: 'completed' | 'failed';
 }
 
 export function setTokens(access: string, refresh: string) {
@@ -41,7 +50,10 @@ async function request<T>(
 ): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
   const headers = new Headers(options.headers);
-  headers.set('Content-Type', 'application/json');
+  const isMultipart = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  if (options.body && !isMultipart && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
 
   const response = await fetch(url, { ...options, headers });
@@ -98,10 +110,47 @@ function mapBackendMessage(m: any): Message {
     translatedText: m.translatedText ?? null,
     targetLang: m.targetLang ?? null,
     translateStatus: (m.translateStatus as TranslateStatus) ?? 'pending',
+    type: m.voiceFileId ? 'voice' : 'text',
+    audioUrl: m.voiceFileId
+      ? apiClient.voiceFileUrl(m.voiceFileId)
+      : null,
+    transcript: m.transcript ?? null,
+    transcriptStatus:
+      m.sttStatus === 'pending'
+        ? 'processing'
+        : m.sttStatus === 'none'
+          ? 'skipped'
+          : (m.sttStatus ?? 'skipped'),
+    summary: m.voiceSummary ?? null,
+    summaryStatus:
+      m.summaryStatus === 'pending'
+        ? 'processing'
+        : m.summaryStatus === 'none'
+          ? 'not_needed'
+          : (m.summaryStatus ?? 'not_needed'),
+    voiceMetadata: m.voiceFileId
+      ? {
+          durationMs: Number(m.voiceDuration ?? 0) * 1000,
+          mimeType: m.voiceMimeType ?? 'audio/webm',
+          sizeBytes: Number(m.voiceSize ?? 0),
+        }
+      : null,
+    uploadStatus: m.voiceFileId ? 'uploaded' : undefined,
   };
 }
 
 export const apiClient = {
+  voiceFileUrl: (voiceFileId: string) =>
+    `${API_BASE}/messages/voice/${encodeURIComponent(voiceFileId)}`,
+
+  getVoiceAudio: async (voiceFileId: string): Promise<Blob> => {
+    const headers = new Headers();
+    if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+    const response = await fetch(apiClient.voiceFileUrl(voiceFileId), { headers });
+    if (!response.ok) throw new Error(`Не удалось загрузить аудио: ${response.status}`);
+    return response.blob();
+  },
+
   // Auth
   register: (data: { email: string; username: string; password: string }) =>
     request<{
@@ -255,14 +304,57 @@ export const apiClient = {
     });
   },
 
+  translateText: (text: string, sourceLang: string, targetLang: string) =>
+    request<{
+      originalText: string;
+      translatedText: string;
+      sourceLang: string;
+      targetLang: string;
+      status: 'completed' | 'failed';
+      mock: boolean;
+    }>('/messages/translate', {
+      method: 'POST',
+      body: JSON.stringify({ text, source_lang: sourceLang, target_lang: targetLang }),
+    }),
+
+  summarizeMessages: (
+    language: string,
+    messages: Array<{ sender_id: string; text: string; timestamp?: string }>,
+  ) =>
+    request<SummaryResponse>('/messages/summary', {
+      method: 'POST',
+      body: JSON.stringify({ language, messages }),
+    }),
+
+  transcribeAudio: async (file: Blob, language: string) => {
+    const formData = new FormData();
+    const extension = file.type.includes('wav')
+      ? 'wav'
+      : file.type.includes('ogg')
+        ? 'ogg'
+        : file.type.includes('mpeg') || file.type.includes('mp3')
+          ? 'mp3'
+          : file.type.includes('mp4') || file.type.includes('m4a')
+            ? 'm4a'
+            : 'webm';
+    formData.append('file', file, `audio.${extension}`);
+    formData.append('language', language);
+    return request<{
+      transcript: string;
+      summary?: string;
+      language: string;
+      status: 'completed' | 'failed';
+    }>('/messages/transcribe', { method: 'POST', body: formData });
+  },
+
   /**
-   * Mock отправки голосового. Когда бэк будет готов —
-   * заменить на multipart POST /messages/chat/:chatId/voice
+   * Uploads voice through backend; transcription and summary are updated over WebSocket.
    */
   sendVoiceMessage: async (
     chatId: number,
     file: Blob,
-    meta: { durationMs: number; mimeType: string }
+    meta: { durationMs: number; mimeType: string },
+    signal?: AbortSignal,
   ): Promise<{
     id: number;
     chatId: number;
@@ -271,23 +363,32 @@ export const apiClient = {
     durationMs: number;
     mimeType: string;
   }> => {
-    // симуляция сети
-    await new Promise((r) => setTimeout(r, 1200 + Math.random() * 800));
-
-    // ~10% шанс ошибки для проверки retry (убери, если мешает)
-    // if (Math.random() < 0.1) throw new Error('Ошибка загрузки');
-
-    const fakeId = Date.now();
-    // пока отдаём blob-url как audioUrl; бэк вернёт настоящий URL
-    const audioUrl = URL.createObjectURL(file);
-
+    const formData = new FormData();
+    const extension = meta.mimeType.includes('webm')
+      ? 'webm'
+      : meta.mimeType.includes('ogg')
+        ? 'ogg'
+        : meta.mimeType.includes('wav')
+          ? 'wav'
+          : meta.mimeType.includes('mpeg') || meta.mimeType.includes('mp3')
+            ? 'mp3'
+            : 'm4a';
+    formData.append('file', file, `voice.${extension}`);
+    formData.append('duration', String(Math.round(meta.durationMs / 1000)));
+    const message = await request<any>(`/messages/chat/${chatId}/voice`, {
+      method: 'POST',
+      body: formData,
+      signal,
+    });
+    const voiceFileId = message.voiceFileId;
+    if (!voiceFileId) throw new Error('Backend did not return a voice file id');
     return {
-      id: fakeId,
-      chatId,
-      userId: 0, // маппится на фронте
-      audioUrl,
-      durationMs: meta.durationMs,
-      mimeType: meta.mimeType,
+      id: message.id,
+      chatId: message.chatId,
+      userId: message.userId,
+      audioUrl: apiClient.voiceFileUrl(voiceFileId),
+      durationMs: Number(message.voiceDuration ?? 0) * 1000,
+      mimeType: message.voiceMimeType ?? meta.mimeType,
     };
   },
 };

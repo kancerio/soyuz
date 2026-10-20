@@ -595,7 +595,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     messageId: number;
     chatId: number;
     transcript: string;
-    sttStatus: string;
+    transcriptStatus: string;
   }) {
     this.server.to(`chat_${payload.chatId}`).emit('message_transcribed', payload);
 
@@ -603,7 +603,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       event: 'message_transcribed',
       message_id: payload.messageId,
       chat_id: payload.chatId,
-      stt_status: payload.sttStatus,
+      transcript_status: payload.transcriptStatus,
       timestamp: new Date().toISOString(),
     });
   }
@@ -612,7 +612,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleMessageVoiceSummary(payload: {
     messageId: number;
     chatId: number;
-    voiceSummary: string;
+    summary: string;
     summaryStatus: string;
   }) {
     this.server.to(`chat_${payload.chatId}`).emit('message_voice_summary', payload);

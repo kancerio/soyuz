@@ -132,13 +132,34 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         targetLang: msg.targetLang ?? null,
         translateStatus: msg.translateStatus ?? 'skipped',
         localStatus: msg.userId === user.id ? 'read' : 'delivered',
-        type: msg.type ?? 'text',
-        audioUrl: msg.audioUrl ?? null,
+        type: msg.voiceFileId ? 'voice' : (msg.type ?? 'text'),
+        audioUrl:
+          msg.audioUrl ??
+          (msg.voiceFileId ? apiClient.voiceFileUrl(msg.voiceFileId) : null),
         transcript: msg.transcript ?? null,
-        transcriptStatus: msg.transcriptStatus ?? undefined,
-        summary: msg.summary ?? null,
-        summaryStatus: msg.summaryStatus ?? undefined,
-        voiceMetadata: msg.voiceMetadata ?? null,
+        transcriptStatus:
+          msg.transcriptStatus ??
+          (msg.sttStatus === 'pending'
+            ? 'processing'
+            : msg.sttStatus === 'none'
+              ? 'skipped'
+              : msg.sttStatus),
+        summary: msg.summary ?? msg.voiceSummary ?? null,
+        summaryStatus:
+          msg.summaryStatus === 'pending'
+            ? 'processing'
+            : msg.summaryStatus === 'none'
+              ? 'not_needed'
+              : (msg.summaryStatus ?? undefined),
+        voiceMetadata:
+          msg.voiceMetadata ??
+          (msg.voiceFileId
+            ? {
+                durationMs: Number(msg.voiceDuration ?? 0) * 1000,
+                mimeType: msg.voiceMimeType ?? 'audio/webm',
+                sizeBytes: Number(msg.voiceSize ?? 0),
+              }
+            : null),
       };
       setMessages((prev) => mergeMessages(prev, [incoming]));
     };
@@ -371,7 +392,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       const result = await apiClient.sendVoiceMessage(chatIdNum, draft.blob, {
         durationMs: draft.durationMs,
         mimeType: draft.mimeType,
-      });
+      }, controller.signal);
 
       if (controller.signal.aborted) return;
 
@@ -390,53 +411,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         )
       );
 
-      const finalId = result.id;
-      const durationMs = draft.durationMs;
-
-      setTimeout(() => {
-        const mockTranscript =
-          durationMs > 60_000
-            ? (
-                '[mock] ' +
-                'Это длинное голосовое сообщение для проверки summary. '.repeat(20)
-              ).trim()
-            : '[mock] Пример распознанного текста голосового сообщения.';
-
-        const needSummary =
-          durationMs > 60_000 || mockTranscript.length > 250;
-
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === finalId
-              ? {
-                  ...m,
-                  transcript: mockTranscript,
-                  transcriptStatus: 'completed' as const,
-                  summaryStatus: needSummary
-                    ? ('processing' as const)
-                    : ('not_needed' as const),
-                }
-              : m
-          )
-        );
-
-        if (needSummary) {
-          setTimeout(() => {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === finalId
-                  ? {
-                      ...m,
-                      summary:
-                        '[mock] Кратко: основное содержание голосового сообщения.',
-                      summaryStatus: 'completed' as const,
-                    }
-                  : m
-              )
-            );
-          }, 1500);
-        }
-      }, 2000);
     } catch (err: any) {
       if (controller.signal.aborted) return;
       console.error('Voice upload failed', err);
@@ -502,7 +476,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       const result = await apiClient.sendVoiceMessage(chatIdNum, blob, {
         durationMs: meta.durationMs,
         mimeType: meta.mimeType,
-      });
+      }, controller.signal);
       if (controller.signal.aborted) return;
 
       setMessages((prev) =>
@@ -520,53 +494,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         )
       );
 
-      const finalId = result.id;
-      const durationMs = meta.durationMs;
-
-      setTimeout(() => {
-        const mockTranscript =
-          durationMs > 60_000
-            ? (
-                '[mock] ' +
-                'Это длинное голосовое сообщение для проверки summary. '.repeat(20)
-              ).trim()
-            : '[mock] Пример распознанного текста голосового сообщения.';
-
-        const needSummary =
-          durationMs > 60_000 || mockTranscript.length > 250;
-
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === finalId
-              ? {
-                  ...m,
-                  transcript: mockTranscript,
-                  transcriptStatus: 'completed' as const,
-                  summaryStatus: needSummary
-                    ? ('processing' as const)
-                    : ('not_needed' as const),
-                }
-              : m
-          )
-        );
-
-        if (needSummary) {
-          setTimeout(() => {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === finalId
-                  ? {
-                      ...m,
-                      summary:
-                        '[mock] Кратко: основное содержание голосового сообщения.',
-                      summaryStatus: 'completed' as const,
-                    }
-                  : m
-              )
-            );
-          }, 1500);
-        }
-      }, 2000);
     } catch {
       if (controller.signal.aborted) return;
       setMessages((prev) =>

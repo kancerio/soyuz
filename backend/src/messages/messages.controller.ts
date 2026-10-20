@@ -12,6 +12,7 @@ import {
   UseInterceptors,
   UploadedFile,
   Res,
+  BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -21,6 +22,8 @@ import { ChatsService } from '../chats/chats.service';
 import { AssistDto } from './dto/assist.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { EditMessageDto } from './dto/edit-message.dto';
+import { TranslateDto } from './dto/translate.dto';
+import { SummaryDto } from './dto/summary.dto';
 
 @Controller('messages')
 @UseGuards(AuthGuard('jwt'))
@@ -70,12 +73,39 @@ export class MessagesController {
     @UploadedFile() file: Express.Multer.File,
     @Body('duration') duration?: string,
   ) {
+    if (!file) throw new BadRequestException('Audio file is required');
     return this.messagesService.sendVoiceMessage(
       +chatId,
       req.user.userId,
       file,
       duration ? +duration : null,
     );
+  }
+
+  @Post('translate')
+  async translate(@Body() body: TranslateDto) {
+    return this.messagesService.translateText(
+      body.text,
+      body.source_lang,
+      body.target_lang,
+    );
+  }
+
+  @Post('summary')
+  async summarize(@Body() body: SummaryDto) {
+    return this.messagesService.summarizeMessages(body.messages, body.language);
+  }
+
+  @Post('transcribe')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }),
+  )
+  async transcribeAudio(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('language') language?: string,
+  ) {
+    if (!file) throw new BadRequestException('Audio file is required');
+    return this.messagesService.transcribeAudio(file, language || 'ru');
   }
 
   @Get('voice/:fileId')

@@ -17,6 +17,7 @@ from pydantic_core import PydanticCustomError
 from .llm_provider import (
     LLMProviderError,
     OpenAICompatibleSTTClient,
+    SpeechProviderTimeout,
     lm_studio_from_env,
 )
 
@@ -752,6 +753,11 @@ async def speech_to_text(audio: UploadFile = File(...), language: str = Form("ru
             )
     except ServiceUnavailableError:
         raise
+    except SpeechProviderTimeout as exc:
+        logger.exception(
+            "speech_provider_timeout endpoint=stt provider=%s", provider_name
+        )
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
     except LLMProviderError as exc:
         logger.exception("ai_provider_error endpoint=stt provider=%s", provider_name)
         raise HTTPException(status_code=502, detail=str(exc)) from exc

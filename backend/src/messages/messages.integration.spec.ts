@@ -266,7 +266,7 @@ describe('Интеграционные тесты (Задача 6)', () => {
         expect.objectContaining({
           messageId: voiceMessage.id,
           transcript: 'Распознанный голос интеграционного теста',
-          sttStatus: 'completed',
+          transcriptStatus: 'completed',
         }),
       );
 
@@ -274,7 +274,7 @@ describe('Интеграционные тесты (Задача 6)', () => {
         'message.voice_summary',
         expect.objectContaining({
           messageId: voiceMessage.id,
-          voiceSummary: 'Краткое содержание голосового',
+          summary: 'Краткое содержание голосового',
           summaryStatus: 'completed',
         }),
       );
@@ -328,7 +328,7 @@ describe('Интеграционные тесты (Задача 6)', () => {
         'message.transcribed',
         expect.objectContaining({
           messageId: voiceMessage.id,
-          sttStatus: 'failed',
+          transcriptStatus: 'failed',
         }),
       );
 
