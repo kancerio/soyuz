@@ -255,39 +255,55 @@ export const apiClient = {
     });
   },
 
-  /**
-   * Mock отправки голосового. Когда бэк будет готов —
-   * заменить на multipart POST /messages/chat/:chatId/voice
-   */
+  voiceFileUrl: (voiceFileId: string) =>
+    `${API_BASE}/messages/voice/${encodeURIComponent(voiceFileId)}`,
+
+  getVoiceAudio: async (voiceFileId: string): Promise<Blob> => {
+    const headers = new Headers();
+    if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+    const response = await fetch(apiClient.voiceFileUrl(voiceFileId), { headers });
+    if (!response.ok) throw new Error(`Не удалось загрузить аудио: ${response.status}`);
+    return response.blob();
+  },
+
   sendVoiceMessage: async (
     chatId: number,
     file: Blob,
-    meta: { durationMs: number; mimeType: string }
-  ): Promise<{
-    id: number;
-    chatId: number;
-    userId: number;
-    audioUrl: string;
-    durationMs: number;
-    mimeType: string;
-  }> => {
-    // симуляция сети
-    await new Promise((r) => setTimeout(r, 1200 + Math.random() * 800));
+    meta: { durationMs: number; mimeType: string },
+    signal?: AbortSignal,
+  ) => {
+    const formData = new FormData();
+    const extension = meta.mimeType.includes('webm')
+      ? 'webm'
+      : meta.mimeType.includes('ogg')
+        ? 'ogg'
+        : meta.mimeType.includes('wav')
+          ? 'wav'
+          : meta.mimeType.includes('mpeg') || meta.mimeType.includes('mp3')
+            ? 'mp3'
+            : 'm4a';
+    formData.append('file', file, `voice.${extension}`);
+    formData.append('duration', String(Math.round(meta.durationMs / 1000)));
 
-    // ~10% шанс ошибки для проверки retry (убери, если мешает)
-    // if (Math.random() < 0.1) throw new Error('Ошибка загрузки');
+    const message = await request<any>(`/messages/chat/${chatId}/voice`, {
+      method: 'POST',
+      body: formData,
+      signal,
+    });
 
-    const fakeId = Date.now();
-    // пока отдаём blob-url как audioUrl; бэк вернёт настоящий URL
-    const audioUrl = URL.createObjectURL(file);
+    const voiceFileId = message.voiceFileId;
+    if (!voiceFileId) throw new Error('Backend did not return a voice file id');
 
     return {
-      id: fakeId,
-      chatId,
-      userId: 0, // маппится на фронте
-      audioUrl,
-      durationMs: meta.durationMs,
-      mimeType: meta.mimeType,
+      id: message.id,
+      chatId: message.chatId,
+      userId: message.userId,
+      voiceFileId,
+      audioUrl: apiClient.voiceFileUrl(voiceFileId),
+      durationMs: Number(message.voiceDuration ?? 0) * 1000 || meta.durationMs,
+      mimeType: message.voiceMimeType ?? meta.mimeType,
+      sttStatus: message.sttStatus ?? 'pending',
+      summaryStatus: message.summaryStatus ?? 'pending',
     };
   },
 };
