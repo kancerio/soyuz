@@ -17,6 +17,7 @@ import VoiceComposer, { VoiceDraft } from './VoiceComposer';
 import AudioPlayer from './AudioPlayer';
 import VoiceTranscript from './VoiceTranscript';
 import VoiceSummary from './VoiceSummary';
+import ChatSummaryPanel from './ChatSummaryPanel';
 
 interface ChatWindowProps {
   chatId: string;
@@ -630,6 +631,10 @@ const handleVoiceRetry = async (msg: Message) => {
           // результат STT из панели AI → в поле ввода (черновик)
           setNewMessage((prev) => (prev ? `${prev} ${text}` : text));
         }}
+      />
+      <ChatSummaryPanel
+        messages={messages}
+        language={(user?.language || 'ru').toLowerCase()}
       />
 
       <div className="p-2 border-b dark:border-gray-700 flex justify-between items-center">
