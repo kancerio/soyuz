@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiClient } from '@/lib/apiClient';
+import { apiClient, mapBackendMessage } from '@/lib/apiClient';
 import { initSocket, getSocket } from '@/lib/socket';
 import { useUser } from '@/context/UserContext';
 import { useLanguage } from '@/context/LanguageContext';
@@ -37,6 +37,7 @@ function mergeMessages(prev: Message[], incoming: Message[]): Message[] {
         sourceLang: m.sourceLang ?? existing.sourceLang,
         targetLang: m.targetLang ?? existing.targetLang,
         type: m.type ?? existing.type,
+        voiceFileId: m.voiceFileId ?? existing.voiceFileId,
         audioUrl: m.audioUrl ?? existing.audioUrl,
         localAudioUrl: m.localAudioUrl ?? existing.localAudioUrl,
         transcript: m.transcript ?? existing.transcript,
@@ -115,31 +116,8 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
 
     const handleNewMessage = (msg: any) => {
       if (Number(msg.chatId) !== chatIdNum) return;
-      const incoming: Message = {
-        id: msg.id,
-        content: msg.content,
-        senderId: msg.userId,
-        chatId: msg.chatId,
-        timestamp: msg.createdAt ? new Date(msg.createdAt) : new Date(),
-        isEdited: msg.isEdited ?? false,
-        isDeleted: msg.isDeleted ?? false,
-        isDelivered: msg.isDelivered ?? false,
-        isRead: msg.isRead ?? false,
-        readAt: msg.readAt ?? null,
-        originalText: msg.originalText ?? msg.content,
-        sourceLang: msg.sourceLang ?? null,
-        translatedText: msg.translatedText ?? null,
-        targetLang: msg.targetLang ?? null,
-        translateStatus: msg.translateStatus ?? 'skipped',
-        localStatus: msg.userId === user.id ? 'read' : 'delivered',
-        type: msg.type ?? 'text',
-        audioUrl: msg.audioUrl ?? null,
-        transcript: msg.transcript ?? null,
-        transcriptStatus: msg.transcriptStatus ?? undefined,
-        summary: msg.summary ?? null,
-        summaryStatus: msg.summaryStatus ?? undefined,
-        voiceMetadata: msg.voiceMetadata ?? null,
-      };
+      const incoming = mapBackendMessage(msg);
+      incoming.localStatus = msg.userId === user.id ? 'read' : 'delivered';
       setMessages((prev) => mergeMessages(prev, [incoming]));
     };
 
@@ -163,20 +141,29 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       );
     };
 
-    const handleMessageTranscribed = (data: {
+const handleMessageTranscribed = (data: {
       messageId: number;
       chatId: number;
-      transcript: string;
-      transcriptStatus: 'completed' | 'failed';
+      transcript?: string;
+      sttStatus?: string;
+      transcriptStatus?: string;
     }) => {
       if (Number(data.chatId) !== chatIdNum) return;
+      const status =
+        data.transcriptStatus ??
+        (data.sttStatus === 'pending'
+          ? 'processing'
+          : data.sttStatus === 'none'
+            ? 'skipped'
+            : data.sttStatus);
+
       setMessages((prev) =>
         prev.map((m) =>
           m.id === data.messageId
             ? {
                 ...m,
-                transcript: data.transcript,
-                transcriptStatus: data.transcriptStatus,
+                transcript: data.transcript ?? m.transcript,
+                transcriptStatus: (status as any) ?? m.transcriptStatus,
               }
             : m
         )
@@ -186,17 +173,24 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     const handleMessageVoiceSummary = (data: {
       messageId: number;
       chatId: number;
-      summary: string;
-      summaryStatus: 'completed' | 'failed' | 'not_needed';
+      summary?: string;
+      summaryStatus?: string;
     }) => {
       if (Number(data.chatId) !== chatIdNum) return;
+      const status =
+        data.summaryStatus === 'none'
+          ? 'not_needed'
+          : data.summaryStatus === 'pending'
+            ? 'processing'
+            : data.summaryStatus;
+
       setMessages((prev) =>
         prev.map((m) =>
           m.id === data.messageId
             ? {
                 ...m,
-                summary: data.summary,
-                summaryStatus: data.summaryStatus,
+                summary: data.summary ?? m.summary,
+                summaryStatus: (status as any) ?? m.summaryStatus,
               }
             : m
         )
@@ -221,8 +215,11 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
 
     socket.on('new_message', handleNewMessage);
     socket.on('message_translated', handleMessageTranslated);
+    // оба варианта имён (gateway может слать с _ или .)
     socket.on('message_transcribed', handleMessageTranscribed);
+    socket.on('message.transcribed', handleMessageTranscribed);
     socket.on('message_voice_summary', handleMessageVoiceSummary);
+    socket.on('message.voice_summary', handleMessageVoiceSummary);
     socket.on('message_updated', handleMessageUpdated);
     socket.on('message_deleted', handleMessageDeleted);
 
@@ -231,7 +228,9 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       socket.off('new_message', handleNewMessage);
       socket.off('message_translated', handleMessageTranslated);
       socket.off('message_transcribed', handleMessageTranscribed);
+      socket.off('message.transcribed', handleMessageTranscribed);
       socket.off('message_voice_summary', handleMessageVoiceSummary);
+      socket.off('message.voice_summary', handleMessageVoiceSummary);
       socket.off('message_updated', handleMessageUpdated);
       socket.off('message_deleted', handleMessageDeleted);
     };
@@ -347,7 +346,7 @@ const handleVoiceReady = async (draft: VoiceDraft) => {
       localAudioUrl: draft.localUrl,
       audioUrl: null,
       transcript: null,
-      transcriptStatus: 'pending',
+      transcriptStatus: 'processing',
       summary: null,
       summaryStatus: 'not_needed',
       voiceMetadata: {
@@ -625,7 +624,13 @@ const handleVoiceRetry = async (msg: Message) => {
 
   return (
     <div className="flex flex-col h-full">
-      <AIToolsPanel />
+      <AIToolsPanel
+        messages={messages}
+        onTranscript={(text) => {
+          // результат STT из панели AI → в поле ввода (черновик)
+          setNewMessage((prev) => (prev ? `${prev} ${text}` : text));
+        }}
+      />
 
       <div className="p-2 border-b dark:border-gray-700 flex justify-between items-center">
         <div className="flex items-center gap-2">
