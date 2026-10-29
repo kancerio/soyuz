@@ -1,6 +1,5 @@
 import { Chat, Message, TranslateStatus, TranscriptStatus, SummaryStatus } from '@/types/chat';
 import { User } from '@/types/user';
-import { mockGroupStore } from './mockGroupStore';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -189,77 +188,48 @@ export const apiClient = {
 
   getUsers: () => request<User[]>('/users'),
 
-  getChats: async () => {
-    const realChats = await request<Chat[]>('/chats');
-    const allGroups = mockGroupStore.getGroups();
-    const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
-    const userGroups = allGroups.filter((group) =>
-      group.members.some((member) => member.userId === currentUser.id)
-    );
-    const groupChats: Chat[] = userGroups.map((group) => ({
-      id: group.id,
-      title: group.title,
-      isGroup: true,
-      createdAt: new Date(),
-    }));
-    return [...realChats, ...groupChats];
-  },
+  // Chats — только backend, без mockGroupStore
+  getChats: () => request<Chat[]>('/chats'),
 
-  getChat: async (id: number) => {
-    const group = mockGroupStore.getGroup(id);
-    if (group) {
-      return { id: group.id, title: group.title, isGroup: true, createdAt: new Date() } as Chat;
-    }
-    return request<Chat>(`/chats/${id}`);
-  },
+  getChat: (id: number) => request<Chat>(`/chats/${id}`),
 
   createPrivateChat: (userId: number) =>
     request<Chat>(`/chats/private/${userId}`, { method: 'POST' }),
 
+  createGroupChat: (title: string, participantIds: number[]) =>
+    request<Chat>('/chats/group', {
+      method: 'POST',
+      body: JSON.stringify({ title, participantIds }),
+    }),
+
+  getChatMembers: (chatId: number) =>
+    request<Array<{ userId: number; role: string }>>(`/chats/${chatId}/members`),
+
+  updateMemberRole: (chatId: number, userId: number, role: string) =>
+    request<{ userId: number; chatId: number; role: string }>(
+      `/chats/${chatId}/members/${userId}/role`,
+      { method: 'PATCH', body: JSON.stringify({ role }) }
+    ),
+
+  leaveGroup: (chatId: number) =>
+    request<{ message: string }>(`/chats/${chatId}/members/me`, {
+      method: 'DELETE',
+    }),
+
+  removeMember: (chatId: number, userId: number) =>
+    request<unknown>(`/chats/${chatId}/members/${userId}`, {
+      method: 'DELETE',
+    }),
+
   addParticipant: (chatId: number, userId: number) =>
-    request<Chat>(`/chats/${chatId}/add/${userId}`, { method: 'POST' }),
-
-  createGroupChat: async (title: string, participantIds: number[]) => {
-    const allUsers = await apiClient.getUsers();
-    const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
-    const newGroup = mockGroupStore.createGroup(title, currentUser.id, participantIds, allUsers);
-    return { id: newGroup.id, title: newGroup.title, isGroup: true, createdAt: new Date() } as Chat;
-  },
-
-  getChatMembers: async (chatId: number) => mockGroupStore.getMembers(chatId),
-
-  updateMemberRole: async (chatId: number, userId: number, role: string) => {
-    mockGroupStore.updateMemberRole(chatId, userId, role as any);
-  },
-
-  leaveGroup: async (chatId: number) => {
-    const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
-    mockGroupStore.removeMember(chatId, currentUser.id);
-    return { success: true };
-  },
-
-  removeMember: async (chatId: number, userId: number) => {
-    mockGroupStore.removeMember(chatId, userId);
-    return { success: true };
-  },
+    request<unknown>(`/chats/${chatId}/members/${userId}`, {
+      method: 'POST',
+    }),
 
   getMessages: async (chatId: number, limit = 50, offset = 0) => {
-    const group = mockGroupStore.getGroup(chatId);
-    if (group) {
-      const msgs = mockGroupStore.getMessages(chatId);
-      return msgs.slice(offset, offset + limit).map((m) =>
-        mapBackendMessage({
-          id: m.id,
-          content: m.text,
-          userId: m.senderId,
-          chatId: m.chatId,
-          createdAt: m.timestamp,
-          translateStatus: 'skipped',
-          originalText: m.text,
-        })
-      );
-    }
-    const data = await request<any[]>(`/messages/chat/${chatId}?limit=${limit}&offset=${offset}`);
+    const data = await request<any[]>(
+      `/messages/chat/${chatId}?limit=${limit}&offset=${offset}`
+    );
     return data.map(mapBackendMessage);
   },
 
@@ -269,33 +239,8 @@ export const apiClient = {
     sourceLang = 'auto',
     targetLang?: string
   ) => {
-    const group = mockGroupStore.getGroup(chatId);
-    if (group) {
-      const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
-      const newMessage = {
-        id: Date.now(),
-        text: content,
-        senderId: currentUser.id,
-        chatId,
-        timestamp: new Date(),
-      };
-      mockGroupStore.addMessage(chatId, newMessage);
-      return mapBackendMessage({
-        id: newMessage.id,
-        content: newMessage.text,
-        userId: newMessage.senderId,
-        chatId: newMessage.chatId,
-        createdAt: newMessage.timestamp,
-        originalText: newMessage.text,
-        sourceLang,
-        targetLang: targetLang ?? null,
-        translateStatus: 'skipped',
-      });
-    }
-
     const body: any = { content, sourceLang };
     if (targetLang) body.targetLang = targetLang;
-
     const data = await request<any>(`/messages/chat/${chatId}`, {
       method: 'POST',
       body: JSON.stringify(body),
