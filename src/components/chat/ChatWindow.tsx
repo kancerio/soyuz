@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiClient } from '@/lib/apiClient';
+import { apiClient, mapBackendMessage } from '@/lib/apiClient';
 import { initSocket, getSocket } from '@/lib/socket';
 import { useUser } from '@/context/UserContext';
 import { useLanguage } from '@/context/LanguageContext';
@@ -17,6 +17,7 @@ import VoiceComposer, { VoiceDraft } from './VoiceComposer';
 import AudioPlayer from './AudioPlayer';
 import VoiceTranscript from './VoiceTranscript';
 import VoiceSummary from './VoiceSummary';
+import ChatSummaryPanel from './ChatSummaryPanel';
 
 interface ChatWindowProps {
   chatId: string;
@@ -37,6 +38,7 @@ function mergeMessages(prev: Message[], incoming: Message[]): Message[] {
         sourceLang: m.sourceLang ?? existing.sourceLang,
         targetLang: m.targetLang ?? existing.targetLang,
         type: m.type ?? existing.type,
+        voiceFileId: m.voiceFileId ?? existing.voiceFileId,
         audioUrl: m.audioUrl ?? existing.audioUrl,
         localAudioUrl: m.localAudioUrl ?? existing.localAudioUrl,
         transcript: m.transcript ?? existing.transcript,
@@ -115,52 +117,8 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
 
     const handleNewMessage = (msg: any) => {
       if (Number(msg.chatId) !== chatIdNum) return;
-      const incoming: Message = {
-        id: msg.id,
-        content: msg.content,
-        senderId: msg.userId,
-        chatId: msg.chatId,
-        timestamp: msg.createdAt ? new Date(msg.createdAt) : new Date(),
-        isEdited: msg.isEdited ?? false,
-        isDeleted: msg.isDeleted ?? false,
-        isDelivered: msg.isDelivered ?? false,
-        isRead: msg.isRead ?? false,
-        readAt: msg.readAt ?? null,
-        originalText: msg.originalText ?? msg.content,
-        sourceLang: msg.sourceLang ?? null,
-        translatedText: msg.translatedText ?? null,
-        targetLang: msg.targetLang ?? null,
-        translateStatus: msg.translateStatus ?? 'skipped',
-        localStatus: msg.userId === user.id ? 'read' : 'delivered',
-        type: msg.voiceFileId ? 'voice' : (msg.type ?? 'text'),
-        audioUrl:
-          msg.audioUrl ??
-          (msg.voiceFileId ? apiClient.voiceFileUrl(msg.voiceFileId) : null),
-        transcript: msg.transcript ?? null,
-        transcriptStatus:
-          msg.transcriptStatus ??
-          (msg.sttStatus === 'pending'
-            ? 'processing'
-            : msg.sttStatus === 'none'
-              ? 'skipped'
-              : msg.sttStatus),
-        summary: msg.summary ?? msg.voiceSummary ?? null,
-        summaryStatus:
-          msg.summaryStatus === 'pending'
-            ? 'processing'
-            : msg.summaryStatus === 'none'
-              ? 'not_needed'
-              : (msg.summaryStatus ?? undefined),
-        voiceMetadata:
-          msg.voiceMetadata ??
-          (msg.voiceFileId
-            ? {
-                durationMs: Number(msg.voiceDuration ?? 0) * 1000,
-                mimeType: msg.voiceMimeType ?? 'audio/webm',
-                sizeBytes: Number(msg.voiceSize ?? 0),
-              }
-            : null),
-      };
+      const incoming = mapBackendMessage(msg);
+      incoming.localStatus = msg.userId === user.id ? 'read' : 'delivered';
       setMessages((prev) => mergeMessages(prev, [incoming]));
     };
 
@@ -184,20 +142,29 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       );
     };
 
-    const handleMessageTranscribed = (data: {
+const handleMessageTranscribed = (data: {
       messageId: number;
       chatId: number;
-      transcript: string;
-      transcriptStatus: 'completed' | 'failed';
+      transcript?: string;
+      sttStatus?: string;
+      transcriptStatus?: string;
     }) => {
       if (Number(data.chatId) !== chatIdNum) return;
+      const status =
+        data.transcriptStatus ??
+        (data.sttStatus === 'pending'
+          ? 'processing'
+          : data.sttStatus === 'none'
+            ? 'skipped'
+            : data.sttStatus);
+
       setMessages((prev) =>
         prev.map((m) =>
           m.id === data.messageId
             ? {
                 ...m,
-                transcript: data.transcript,
-                transcriptStatus: data.transcriptStatus,
+                transcript: data.transcript ?? m.transcript,
+                transcriptStatus: (status as any) ?? m.transcriptStatus,
               }
             : m
         )
@@ -207,17 +174,24 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     const handleMessageVoiceSummary = (data: {
       messageId: number;
       chatId: number;
-      summary: string;
-      summaryStatus: 'completed' | 'failed' | 'not_needed';
+      summary?: string;
+      summaryStatus?: string;
     }) => {
       if (Number(data.chatId) !== chatIdNum) return;
+      const status =
+        data.summaryStatus === 'none'
+          ? 'not_needed'
+          : data.summaryStatus === 'pending'
+            ? 'processing'
+            : data.summaryStatus;
+
       setMessages((prev) =>
         prev.map((m) =>
           m.id === data.messageId
             ? {
                 ...m,
-                summary: data.summary,
-                summaryStatus: data.summaryStatus,
+                summary: data.summary ?? m.summary,
+                summaryStatus: (status as any) ?? m.summaryStatus,
               }
             : m
         )
@@ -242,8 +216,11 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
 
     socket.on('new_message', handleNewMessage);
     socket.on('message_translated', handleMessageTranslated);
+    // оба варианта имён (gateway может слать с _ или .)
     socket.on('message_transcribed', handleMessageTranscribed);
+    socket.on('message.transcribed', handleMessageTranscribed);
     socket.on('message_voice_summary', handleMessageVoiceSummary);
+    socket.on('message.voice_summary', handleMessageVoiceSummary);
     socket.on('message_updated', handleMessageUpdated);
     socket.on('message_deleted', handleMessageDeleted);
 
@@ -252,7 +229,9 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       socket.off('new_message', handleNewMessage);
       socket.off('message_translated', handleMessageTranslated);
       socket.off('message_transcribed', handleMessageTranscribed);
+      socket.off('message.transcribed', handleMessageTranscribed);
       socket.off('message_voice_summary', handleMessageVoiceSummary);
+      socket.off('message.voice_summary', handleMessageVoiceSummary);
       socket.off('message_updated', handleMessageUpdated);
       socket.off('message_deleted', handleMessageDeleted);
     };
@@ -354,7 +333,8 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     }
   };
 
-  const handleVoiceReady = async (draft: VoiceDraft) => {
+const handleVoiceReady = async (draft: VoiceDraft) => {
+    // текстовый черновик newMessage НЕ трогаем
     const tempId = -Date.now();
 
     const voiceMessage: Message = {
@@ -367,7 +347,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       localAudioUrl: draft.localUrl,
       audioUrl: null,
       transcript: null,
-      transcriptStatus: 'pending',
+      transcriptStatus: 'processing',
       summary: null,
       summaryStatus: 'not_needed',
       voiceMetadata: {
@@ -389,10 +369,30 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     try {
       if (controller.signal.aborted) return;
 
-      const result = await apiClient.sendVoiceMessage(chatIdNum, draft.blob, {
-        durationMs: draft.durationMs,
-        mimeType: draft.mimeType,
-      }, controller.signal);
+      const result = await apiClient.sendVoiceMessage(
+        chatIdNum,
+        draft.blob,
+        {
+          durationMs: draft.durationMs,
+          mimeType: draft.mimeType,
+        },
+        controller.signal,
+      );
+
+      if (controller.signal.aborted) return;
+
+      // Защищённый файл с сервера → blob URL для плеера (JWT)
+      let playUrl = draft.localUrl;
+      try {
+        if (result.voiceFileId) {
+          const serverBlob = await apiClient.getVoiceAudio(result.voiceFileId);
+          if (!controller.signal.aborted) {
+            playUrl = URL.createObjectURL(serverBlob);
+          }
+        }
+      } catch (e) {
+        console.warn('[voice] JWT fetch failed, keep local preview', e);
+      }
 
       if (controller.signal.aborted) return;
 
@@ -402,15 +402,23 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
             ? {
                 ...m,
                 id: result.id,
-                audioUrl: result.audioUrl || draft.localUrl,
+                audioUrl: result.audioUrl,
+                localAudioUrl: playUrl,
+                voiceFileId: result.voiceFileId ?? undefined,
                 uploadStatus: 'uploaded',
                 localStatus: 'sent',
+                // STT/summary придут по WS (задача 2)
                 transcriptStatus: 'processing',
+                summaryStatus: 'not_needed',
+                voiceMetadata: {
+                  durationMs: result.durationMs || draft.durationMs,
+                  mimeType: result.mimeType || draft.mimeType,
+                  sizeBytes: draft.sizeBytes,
+                },
               }
             : m
         )
       );
-
     } catch (err: any) {
       if (controller.signal.aborted) return;
       console.error('Voice upload failed', err);
@@ -440,7 +448,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     );
   };
 
-  const handleVoiceRetry = async (msg: Message) => {
+const handleVoiceRetry = async (msg: Message) => {
     if (!msg.localAudioUrl && !msg.audioUrl) return;
 
     let blob: Blob;
@@ -473,10 +481,30 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     voiceAbortRef.current.set(msg.id, controller);
 
     try {
-      const result = await apiClient.sendVoiceMessage(chatIdNum, blob, {
-        durationMs: meta.durationMs,
-        mimeType: meta.mimeType,
-      }, controller.signal);
+      const result = await apiClient.sendVoiceMessage(
+        chatIdNum,
+        blob,
+        {
+          durationMs: meta.durationMs,
+          mimeType: meta.mimeType,
+        },
+        controller.signal,
+      );
+
+      if (controller.signal.aborted) return;
+
+      let playUrl = msg.localAudioUrl || undefined;
+      try {
+        if (result.voiceFileId) {
+          const serverBlob = await apiClient.getVoiceAudio(result.voiceFileId);
+          if (!controller.signal.aborted) {
+            playUrl = URL.createObjectURL(serverBlob);
+          }
+        }
+      } catch (e) {
+        console.warn('[voice] JWT fetch failed on retry', e);
+      }
+
       if (controller.signal.aborted) return;
 
       setMessages((prev) =>
@@ -485,15 +513,22 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
             ? {
                 ...m,
                 id: result.id,
-                audioUrl: result.audioUrl || msg.localAudioUrl || null,
+                audioUrl: result.audioUrl,
+                localAudioUrl: playUrl ?? m.localAudioUrl,
+                voiceFileId: result.voiceFileId ?? undefined,
                 uploadStatus: 'uploaded',
                 localStatus: 'sent',
                 transcriptStatus: 'processing',
+                summaryStatus: 'not_needed',
+                voiceMetadata: {
+                  durationMs: result.durationMs || meta.durationMs,
+                  mimeType: result.mimeType || meta.mimeType,
+                  sizeBytes: meta.sizeBytes,
+                },
               }
             : m
         )
       );
-
     } catch {
       if (controller.signal.aborted) return;
       setMessages((prev) =>
@@ -590,7 +625,17 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <AIToolsPanel messages={messages} onTranscript={setNewMessage} />
+      <AIToolsPanel
+        messages={messages}
+        onTranscript={(text) => {
+          // результат STT из панели AI → в поле ввода (черновик)
+          setNewMessage((prev) => (prev ? `${prev} ${text}` : text));
+        }}
+      />
+      <ChatSummaryPanel
+        messages={messages}
+        language={(user?.language || 'ru').toLowerCase()}
+      />
 
       <div className="p-2 border-b dark:border-gray-700 flex justify-between items-center">
         <div className="flex items-center gap-2">
