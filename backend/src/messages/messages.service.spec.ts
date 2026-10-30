@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, BadRequestException, BadGatewayException, GatewayTimeoutException } from '@nestjs/common';
 
 jest.mock('@nestjs/event-emitter', () => {
   class MockEventEmitter2 {
@@ -66,6 +66,21 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
         targetLang: 'en',
         status: 'completed',
         mock: false,
+      }),
+      assist: jest.fn().mockResolvedValue({
+        originalText: 'Черновик',
+        resultText: 'Улучшенный текст',
+        action: 'friendly',
+        status: 'completed',
+        mock: false,
+      }),
+      summarizeMessages: jest.fn().mockResolvedValue({
+        summary: 'Итог',
+        decisions: [],
+        participants: ['1'],
+        language: 'ru',
+        provider: 'lmstudio',
+        status: 'completed',
       }),
       transcribeAudio: jest.fn().mockResolvedValue({
         transcript: 'Распознанный голос',
@@ -151,6 +166,52 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
         id: 101,
       }),
     );
+  });
+
+  describe('AI requests routed through backend', () => {
+    it('returns the translation result', async () => {
+      await expect(service.translateText('Привет', 'ru', 'en')).resolves.toMatchObject({
+        translatedText: 'Hello',
+        status: 'completed',
+      });
+      expect(mockTranslationService.translate).toHaveBeenCalledWith('Привет', 'ru', 'en');
+    });
+
+    it('uses the structured summary contract for chat messages', async () => {
+      const messages = [{ sender_id: '1', text: 'Обсудили сроки' }];
+
+      await expect(service.summarizeMessages(messages, 'ru')).resolves.toMatchObject({
+        summary: 'Итог',
+        provider: 'lmstudio',
+      });
+      expect(mockTranslationService.summarizeMessages).toHaveBeenCalledWith(messages, 'ru');
+    });
+
+    it('maps summary provider failure to a gateway error', async () => {
+      mockTranslationService.summarizeMessages.mockResolvedValueOnce({
+        summary: '',
+        status: 'failed',
+      });
+
+      await expect(service.summarizeMessages([{ sender_id: '1', text: 'Текст' }], 'ru'))
+        .rejects.toBeInstanceOf(BadGatewayException);
+    });
+
+    it('maps local Whisper timeout to HTTP gateway timeout', async () => {
+      mockTranslationService.transcribeAudio.mockResolvedValueOnce({
+        transcript: '',
+        language: 'ru',
+        status: 'failed',
+        error: 'Speech provider timed out',
+      });
+
+      await expect(
+        service.transcribeAudio(
+          { buffer: Buffer.from('audio'), originalname: 'voice.wav', mimetype: 'audio/wav' } as any,
+          'ru',
+        ),
+      ).rejects.toBeInstanceOf(GatewayTimeoutException);
+    });
   });
 
   describe('Voice Messages (Задача 2)', () => {
@@ -269,14 +330,14 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
           expect.objectContaining({
             messageId: 101,
             transcript: 'Распознанный голос',
-            sttStatus: 'completed',
+            transcriptStatus: 'completed',
           }),
         );
         expect(mockEventEmitter.emit).toHaveBeenCalledWith(
           'message.voice_summary',
           expect.objectContaining({
             messageId: 101,
-            voiceSummary: 'Краткое резюме',
+            summary: 'Краткое резюме',
             summaryStatus: 'completed',
           }),
         );
@@ -311,7 +372,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
           'message.transcribed',
           expect.objectContaining({
             messageId: 101,
-            sttStatus: 'failed',
+            transcriptStatus: 'failed',
           }),
         );
       } finally {
