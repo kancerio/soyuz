@@ -1,73 +1,207 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { apiClient } from '@/lib/apiClient';
-import { initSocket } from '@/lib/socket';
+import { useRouter } from 'next/navigation';
+import { apiClient, mapBackendMessage } from '@/lib/apiClient';
+import { initSocket, getSocket } from '@/lib/socket';
 import { useUser } from '@/context/UserContext';
 import { useLanguage } from '@/context/LanguageContext';
+import { useSocketStatus } from '@/context/SocketContext';
 import AIToolsPanel from './AIToolsPanel';
+import GroupMembersModal from './GroupMembersModal';
+import TranslationBlock from './TranslationBlock';
+import RewritePanel, { RewriteAction, RewriteState } from './RewritePanel';
+import LoadingState from '@/components/ui/LoadingState';
+import { Message, MessageTranscribedPayload, MessageVoiceSummaryPayload} from '@/types/chat';
+import VoiceComposer, { VoiceDraft } from './VoiceComposer';
+import AudioPlayer from './AudioPlayer';
+import VoiceTranscript from './VoiceTranscript';
+import VoiceSummary from './VoiceSummary';
+import ChatSummaryPanel from './ChatSummaryPanel';
 
 interface ChatWindowProps {
   chatId: string;
 }
 
-interface LocalMessage {
-  id: number;
-  text: string;
-  senderId: number;
-  chatId: number;
-  timestamp: Date;
-  status?: 'sending' | 'sent' | 'delivered' | 'read';
-  isEdited?: boolean;
-  isDeleted?: boolean;
+function mergeMessages(prev: Message[], incoming: Message[]): Message[] {
+  const map = new Map<number, Message>();
+  prev.forEach((m) => map.set(m.id, m));
+
+  incoming.forEach((m) => {
+    const existing = map.get(m.id);
+    if (existing) {
+      map.set(m.id, {
+        ...existing,
+        ...m,
+        translatedText: m.translatedText ?? existing.translatedText,
+        translateStatus: m.translateStatus ?? existing.translateStatus,
+        sourceLang: m.sourceLang ?? existing.sourceLang,
+        targetLang: m.targetLang ?? existing.targetLang,
+        type: m.type ?? existing.type,
+        voiceFileId: m.voiceFileId ?? existing.voiceFileId,
+        audioUrl: m.audioUrl ?? existing.audioUrl,
+        localAudioUrl: m.localAudioUrl ?? existing.localAudioUrl,
+        transcript: m.transcript ?? existing.transcript,
+        transcriptStatus: m.transcriptStatus ?? existing.transcriptStatus,
+        summary: m.summary ?? existing.summary,
+        summaryStatus: m.summaryStatus ?? existing.summaryStatus,
+        voiceMetadata: m.voiceMetadata ?? existing.voiceMetadata,
+        uploadStatus: m.uploadStatus ?? existing.uploadStatus,
+        localStatus:
+          existing.localStatus === 'sending'
+            ? m.localStatus
+            : (m.localStatus ?? existing.localStatus),
+      });
+    } else {
+      map.set(m.id, m);
+    }
+  });
+
+  return Array.from(map.values()).sort(
+    (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
+  );
 }
 
 export default function ChatWindow({ chatId }: ChatWindowProps) {
+  const router = useRouter();
   const { t } = useLanguage();
   const { user } = useUser();
-  const [messages, setMessages] = useState<LocalMessage[]>([]);
+  const { isConnected } = useSocketStatus();
+  const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [showVoiceComposer, setShowVoiceComposer] = useState(false);
+  const [voiceDraft, setVoiceDraft] = useState<VoiceDraft | null>(null);
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const voiceAbortRef = useRef<Map<number, AbortController>>(new Map());
   const chatIdNum = parseInt(chatId, 10);
+  const [chatInfo, setChatInfo] = useState<{ title: string | null; isGroup: boolean } | null>(null);
+  const [membersMap, setMembersMap] = useState<Map<number, string>>(new Map());
+  const [showMembersModal, setShowMembersModal] = useState(false);
+  const [membersModalKey, setMembersModalKey] = useState(0);
+  const [rewrite, setRewrite] = useState<RewriteState>({ status: 'idle' });
 
-  // WebSocket подписка и подключение к комнате
+  const targetLanguage = (user?.language || 'en').toLowerCase();
+
+  useEffect(() => {
+    const fetchChatInfo = async () => {
+      try {
+        const info = await apiClient.getChat(chatIdNum);
+        setChatInfo(info);
+      } catch (error) {
+        console.error('Failed to fetch chat info', error);
+      }
+    };
+    fetchChatInfo();
+  }, [chatIdNum]);
+
+  useEffect(() => {
+    if (!chatInfo?.isGroup) return;
+    const fetchMembers = async () => {
+      try {
+        const members = await apiClient.getChatMembers(chatIdNum);
+        const map = new Map<number, string>();
+        members.forEach((m: any) => map.set(m.userId, m.role));
+        setMembersMap(map);
+      } catch (error) {
+        console.error('Failed to load members', error);
+      }
+    };
+    fetchMembers();
+  }, [chatInfo?.isGroup, chatIdNum, membersModalKey]);
+
   useEffect(() => {
     if (!user) return;
     const socket = initSocket(user.id);
-    
-    // Присоединяемся к комнате чата
     socket.emit('join_chat', { chatId: chatIdNum });
-    console.log(`🔗 Joined chat room: ${chatIdNum}`);
 
     const handleNewMessage = (msg: any) => {
-      console.log('🟢 new_message received:', msg);
-      // Приводим chatId к числу для безопасного сравнения
       if (Number(msg.chatId) !== chatIdNum) return;
-      
-      setMessages((prev) => {
-        // Избегаем дублирования по id
-        if (prev.some((m) => m.id === msg.id)) return prev;
-        return [
-          ...prev,
-          {
-            id: msg.id,
-            text: msg.content,
-            senderId: msg.userId,
-            chatId: msg.chatId,
-            timestamp: msg.createdAt ? new Date(msg.createdAt) : new Date(),
-            status: msg.userId === user.id ? 'read' : 'delivered',
-            isEdited: msg.isEdited,
-            isDeleted: msg.isDeleted,
-          },
-        ];
-      });
+      const incoming = mapBackendMessage(msg);
+      incoming.localStatus = msg.userId === user.id ? 'read' : 'delivered';
+      setMessages((prev) => mergeMessages(prev, [incoming]));
+    };
+
+    const handleMessageTranslated = (data: {
+      messageId: number;
+      chatId: number;
+      translatedText: string;
+      translateStatus: 'completed' | 'failed';
+    }) => {
+      if (Number(data.chatId) !== chatIdNum) return;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === data.messageId
+            ? {
+                ...m,
+                translatedText: data.translatedText,
+                translateStatus: data.translateStatus,
+              }
+            : m
+        )
+      );
+    };
+
+const handleMessageTranscribed = (data: {
+      messageId: number;
+      chatId: number;
+      transcript?: string;
+      sttStatus?: string;
+      transcriptStatus?: string;
+    }) => {
+      if (Number(data.chatId) !== chatIdNum) return;
+      const status =
+        data.transcriptStatus ??
+        (data.sttStatus === 'pending'
+          ? 'processing'
+          : data.sttStatus === 'none'
+            ? 'skipped'
+            : data.sttStatus);
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === data.messageId
+            ? {
+                ...m,
+                transcript: data.transcript ?? m.transcript,
+                transcriptStatus: (status as any) ?? m.transcriptStatus,
+              }
+            : m
+        )
+      );
+    };
+
+    const handleMessageVoiceSummary = (data: {
+      messageId: number;
+      chatId: number;
+      summary?: string;
+      summaryStatus?: string;
+    }) => {
+      if (Number(data.chatId) !== chatIdNum) return;
+      const status =
+        data.summaryStatus === 'none'
+          ? 'not_needed'
+          : data.summaryStatus === 'pending'
+            ? 'processing'
+            : data.summaryStatus;
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === data.messageId
+            ? {
+                ...m,
+                summary: data.summary ?? m.summary,
+                summaryStatus: (status as any) ?? m.summaryStatus,
+              }
+            : m
+        )
+      );
     };
 
     const handleMessageUpdated = (data: { id: number; content: string }) => {
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === data.id ? { ...m, text: data.content, isEdited: true } : m
+          m.id === data.id ? { ...m, content: data.content, isEdited: true } : m
         )
       );
     };
@@ -75,40 +209,40 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     const handleMessageDeleted = (data: { id: number }) => {
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === data.id ? { ...m, text: '[Удалено]', isDeleted: true } : m
+          m.id === data.id ? { ...m, content: '[Удалено]', isDeleted: true } : m
         )
       );
     };
 
     socket.on('new_message', handleNewMessage);
+    socket.on('message_translated', handleMessageTranslated);
+    // оба варианта имён (gateway может слать с _ или .)
+    socket.on('message_transcribed', handleMessageTranscribed);
+    socket.on('message.transcribed', handleMessageTranscribed);
+    socket.on('message_voice_summary', handleMessageVoiceSummary);
+    socket.on('message.voice_summary', handleMessageVoiceSummary);
     socket.on('message_updated', handleMessageUpdated);
     socket.on('message_deleted', handleMessageDeleted);
 
     return () => {
       socket.emit('leave_chat', { chatId: chatIdNum });
       socket.off('new_message', handleNewMessage);
+      socket.off('message_translated', handleMessageTranslated);
+      socket.off('message_transcribed', handleMessageTranscribed);
+      socket.off('message.transcribed', handleMessageTranscribed);
+      socket.off('message_voice_summary', handleMessageVoiceSummary);
+      socket.off('message.voice_summary', handleMessageVoiceSummary);
       socket.off('message_updated', handleMessageUpdated);
       socket.off('message_deleted', handleMessageDeleted);
     };
   }, [chatIdNum, user]);
 
-  // Загрузка истории сообщений
   useEffect(() => {
     const fetchMessages = async () => {
       setLoading(true);
       try {
         const data = await apiClient.getMessages(chatIdNum);
-        const mapped: LocalMessage[] = data.map((m: any) => ({
-          id: m.id,
-          text: m.content,
-          senderId: m.userId,
-          chatId: m.chatId,
-          timestamp: m.createdAt ? new Date(m.createdAt) : new Date(),
-          status: 'read',
-          isEdited: m.isEdited,
-          isDeleted: m.isDeleted,
-        }));
-        setMessages(mapped);
+        setMessages((prev) => mergeMessages(prev, data));
       } catch (error) {
         console.error('Failed to load messages:', error);
       } finally {
@@ -118,7 +252,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     fetchMessages();
   }, [chatIdNum]);
 
-  // Авто-скролл вниз при новых сообщениях
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -129,53 +262,295 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     const content = newMessage;
     setNewMessage('');
 
-    // Оптимистичное добавление сообщения со статусом 'sending'
     const tempId = Date.now();
-    const tempMessage: LocalMessage = {
+    const tempMessage: Message = {
       id: tempId,
-      text: content,
+      content,
       senderId: user?.id ?? 0,
       chatId: chatIdNum,
       timestamp: new Date(),
-      status: 'sending',
+      originalText: content,
+      sourceLang: 'auto',
+      targetLang: targetLanguage,
+      translatedText: null,
+      translateStatus: 'pending',
+      localStatus: 'sending',
+      type: 'text',
     };
-    setMessages((prev) => [...prev, tempMessage]);
+    setMessages((prev) => mergeMessages(prev, [tempMessage]));
+
+    let fallbackTimer: NodeJS.Timeout;
+    const socket = getSocket();
+    const cleanupFallback = () => fallbackTimer && clearTimeout(fallbackTimer);
+
+    const onNewMessageConfirm = (msg: any) => {
+      if (msg.userId === user?.id && msg.content === content && msg.chatId === chatIdNum) {
+        cleanupFallback();
+        socket?.off('new_message', onNewMessageConfirm);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId
+              ? {
+                  ...m,
+                  id: msg.id,
+                  localStatus: 'sent',
+                  timestamp: msg.createdAt ? new Date(msg.createdAt) : new Date(),
+                }
+              : m
+          )
+        );
+        setTimeout(() => {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === msg.id ? { ...m, localStatus: 'delivered' } : m))
+          );
+        }, 1000);
+        setTimeout(() => {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === msg.id ? { ...m, localStatus: 'read' } : m))
+          );
+        }, 3000);
+      }
+    };
+    socket?.on('new_message', onNewMessageConfirm);
+
+    fallbackTimer = setTimeout(async () => {
+      socket?.off('new_message', onNewMessageConfirm);
+      try {
+        const fresh = await apiClient.getMessages(chatIdNum);
+        setMessages((prev) => mergeMessages(prev, fresh));
+      } catch (err) {
+        console.error('Fallback failed:', err);
+      }
+    }, 5000);
 
     try {
-      const sent = await apiClient.sendMessage(chatIdNum, content);
-      // Обновляем временное сообщение реальными данными от сервера
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === tempId
-            ? {
-                ...msg,
-                id: sent.id,
-                status: 'sent',
-                timestamp: sent.createdAt ? new Date(sent.createdAt) : new Date(),
-              }
-            : msg
-        )
-      );
-      // Имитация получения статусов (если бэкенд их не присылает)
-      setTimeout(() => {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === sent.id ? { ...msg, status: 'delivered' } : msg
-          )
-        );
-      }, 1000);
-      setTimeout(() => {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === sent.id ? { ...msg, status: 'read' } : msg
-          )
-        );
-      }, 3000);
+      await apiClient.sendMessage(chatIdNum, content, 'auto', targetLanguage);
     } catch (error) {
       console.error('Failed to send message:', error);
-      // При ошибке удаляем временное сообщение
-      setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
+      cleanupFallback();
+      socket?.off('new_message', onNewMessageConfirm);
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }
+  };
+
+const handleVoiceReady = async (draft: VoiceDraft) => {
+    // текстовый черновик newMessage НЕ трогаем
+    const tempId = -Date.now();
+
+    const voiceMessage: Message = {
+      id: tempId,
+      content: '',
+      senderId: user?.id ?? 0,
+      chatId: chatIdNum,
+      timestamp: new Date(),
+      type: 'voice',
+      localAudioUrl: draft.localUrl,
+      audioUrl: null,
+      transcript: null,
+      transcriptStatus: 'processing',
+      summary: null,
+      summaryStatus: 'not_needed',
+      voiceMetadata: {
+        durationMs: draft.durationMs,
+        mimeType: draft.mimeType,
+        sizeBytes: draft.sizeBytes,
+      },
+      uploadStatus: 'uploading',
+      localStatus: 'sending',
+    };
+
+    setMessages((prev) => mergeMessages(prev, [voiceMessage]));
+    setVoiceDraft(null);
+    setShowVoiceComposer(false);
+
+    const controller = new AbortController();
+    voiceAbortRef.current.set(tempId, controller);
+
+    try {
+      if (controller.signal.aborted) return;
+
+      const result = await apiClient.sendVoiceMessage(
+        chatIdNum,
+        draft.blob,
+        {
+          durationMs: draft.durationMs,
+          mimeType: draft.mimeType,
+        },
+        controller.signal,
+      );
+
+      if (controller.signal.aborted) return;
+
+      // Защищённый файл с сервера → blob URL для плеера (JWT)
+      let playUrl = draft.localUrl;
+      try {
+        if (result.voiceFileId) {
+          const serverBlob = await apiClient.getVoiceAudio(result.voiceFileId);
+          if (!controller.signal.aborted) {
+            playUrl = URL.createObjectURL(serverBlob);
+          }
+        }
+      } catch (e) {
+        console.warn('[voice] JWT fetch failed, keep local preview', e);
+      }
+
+      if (controller.signal.aborted) return;
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId
+            ? {
+                ...m,
+                id: result.id,
+                audioUrl: result.audioUrl,
+                localAudioUrl: playUrl,
+                voiceFileId: result.voiceFileId ?? undefined,
+                uploadStatus: 'uploaded',
+                localStatus: 'sent',
+                // STT/summary придут по WS (задача 2)
+                transcriptStatus: 'processing',
+                summaryStatus: 'not_needed',
+                voiceMetadata: {
+                  durationMs: result.durationMs || draft.durationMs,
+                  mimeType: result.mimeType || draft.mimeType,
+                  sizeBytes: draft.sizeBytes,
+                },
+              }
+            : m
+        )
+      );
+    } catch (err: any) {
+      if (controller.signal.aborted) return;
+      console.error('Voice upload failed', err);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId
+            ? { ...m, uploadStatus: 'error', localStatus: undefined }
+            : m
+        )
+      );
+    } finally {
+      voiceAbortRef.current.delete(tempId);
+    }
+  };
+
+  const handleVoiceCancelUpload = (messageId: number) => {
+    const controller = voiceAbortRef.current.get(messageId);
+    controller?.abort();
+    voiceAbortRef.current.delete(messageId);
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId
+          ? { ...m, uploadStatus: 'cancelled', localStatus: undefined }
+          : m
+      )
+    );
+  };
+
+const handleVoiceRetry = async (msg: Message) => {
+    if (!msg.localAudioUrl && !msg.audioUrl) return;
+
+    let blob: Blob;
+    try {
+      const url = msg.localAudioUrl || msg.audioUrl!;
+      const res = await fetch(url);
+      blob = await res.blob();
+    } catch {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === msg.id ? { ...m, uploadStatus: 'error' } : m))
+      );
+      return;
+    }
+
+    const meta = msg.voiceMetadata ?? {
+      durationMs: 0,
+      mimeType: blob.type || 'audio/webm',
+      sizeBytes: blob.size,
+    };
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === msg.id
+          ? { ...m, uploadStatus: 'uploading', localStatus: 'sending' }
+          : m
+      )
+    );
+
+    const controller = new AbortController();
+    voiceAbortRef.current.set(msg.id, controller);
+
+    try {
+      const result = await apiClient.sendVoiceMessage(
+        chatIdNum,
+        blob,
+        {
+          durationMs: meta.durationMs,
+          mimeType: meta.mimeType,
+        },
+        controller.signal,
+      );
+
+      if (controller.signal.aborted) return;
+
+      let playUrl = msg.localAudioUrl || undefined;
+      try {
+        if (result.voiceFileId) {
+          const serverBlob = await apiClient.getVoiceAudio(result.voiceFileId);
+          if (!controller.signal.aborted) {
+            playUrl = URL.createObjectURL(serverBlob);
+          }
+        }
+      } catch (e) {
+        console.warn('[voice] JWT fetch failed on retry', e);
+      }
+
+      if (controller.signal.aborted) return;
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msg.id
+            ? {
+                ...m,
+                id: result.id,
+                audioUrl: result.audioUrl,
+                localAudioUrl: playUrl ?? m.localAudioUrl,
+                voiceFileId: result.voiceFileId ?? undefined,
+                uploadStatus: 'uploaded',
+                localStatus: 'sent',
+                transcriptStatus: 'processing',
+                summaryStatus: 'not_needed',
+                voiceMetadata: {
+                  durationMs: result.durationMs || meta.durationMs,
+                  mimeType: result.mimeType || meta.mimeType,
+                  sizeBytes: meta.sizeBytes,
+                },
+              }
+            : m
+        )
+      );
+    } catch {
+      if (controller.signal.aborted) return;
+      setMessages((prev) =>
+        prev.map((m) => (m.id === msg.id ? { ...m, uploadStatus: 'error' } : m))
+      );
+    } finally {
+      voiceAbortRef.current.delete(msg.id);
+    }
+  };
+
+  const handleVoiceRemoveCancelled = (messageId: number) => {
+    setMessages((prev) => {
+      const target = prev.find((m) => m.id === messageId);
+      if (target?.localAudioUrl) {
+        try {
+          URL.revokeObjectURL(target.localAudioUrl);
+        } catch {
+          // ignore
+        }
+      }
+      return prev.filter((m) => m.id !== messageId);
+    });
   };
 
   const getStatusIcon = (status?: string) => {
@@ -193,11 +568,107 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     }
   };
 
-  if (loading) return <div className="p-4">Загрузка сообщений...</div>;
+  const getRoleSymbol = (role?: string) => {
+    if (role === 'owner') return '👑 ';
+    if (role === 'admin') return '⭐ ';
+    return '';
+  };
+
+  const refreshRoles = () => setMembersModalKey((prev) => prev + 1);
+
+  const handleAssist = async (action: RewriteAction) => {
+    const draft = newMessage.trim();
+    if (!draft) return;
+
+    setRewrite({ status: 'loading', action, originalDraft: draft });
+
+    try {
+      const res = await apiClient.assistText(draft, action);
+      setRewrite({
+        status: 'preview',
+        action,
+        originalDraft: draft,
+        preview: res.resultText,
+        mock: res.mock,
+      });
+    } catch (err: any) {
+      setRewrite({
+        status: 'error',
+        action,
+        originalDraft: draft,
+        error: err?.message || 'Ошибка AI',
+      });
+    }
+  };
+
+  const applyRewrite = () => {
+    if (rewrite.preview) setNewMessage(rewrite.preview);
+    setRewrite({ status: 'idle' });
+  };
+
+  const cancelRewrite = () => {
+    if (rewrite.originalDraft !== undefined) setNewMessage(rewrite.originalDraft);
+    setRewrite({ status: 'idle' });
+  };
+
+  const retryRewrite = () => {
+    if (rewrite.action) handleAssist(rewrite.action);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <LoadingState text="Загрузка сообщений…" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
-      <AIToolsPanel />
+      <AIToolsPanel
+        messages={messages}
+        onTranscript={(text) => {
+          // результат STT из панели AI → в поле ввода (черновик)
+          setNewMessage((prev) => (prev ? `${prev} ${text}` : text));
+        }}
+      />
+      <ChatSummaryPanel
+        messages={messages}
+        language={(user?.language || 'ru').toLowerCase()}
+      />
+
+      <div className="p-2 border-b dark:border-gray-700 flex justify-between items-center">
+        <div className="flex items-center gap-2">
+          <span
+            className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
+          />
+          <span className="text-sm">{isConnected ? 'Online' : 'Offline'}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            Перевод → <span className="font-semibold uppercase">{targetLanguage}</span>
+          </div>
+          {chatInfo?.isGroup && (
+            <button
+              onClick={() => setShowMembersModal(true)}
+              className="text-sm text-blue-600 hover:underline"
+            >
+              Участники ({membersMap.size})
+            </button>
+          )}
+        </div>
+      </div>
+
+      {chatInfo?.isGroup && (
+        <div
+          onClick={() => setShowMembersModal(true)}
+          className="p-2 border-b cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 text-center"
+        >
+          <h2 className="text-lg font-semibold">{chatInfo.title || 'Группа'}</h2>
+          <div className="text-xs text-gray-500">Нажмите для просмотра участников</div>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
           <div className="text-center text-gray-500">Нет сообщений. Напишите первое!</div>
@@ -214,36 +685,162 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                   : 'bg-gray-200 dark:bg-gray-700'
               }`}
             >
-              <p>{msg.isDeleted ? '[Удалено]' : msg.text}</p>
+              {msg.senderId !== user?.id && (
+                <div className="font-semibold text-sm mb-1">
+                  {getRoleSymbol(membersMap.get(msg.senderId))}
+                </div>
+              )}
+
+              {msg.isDeleted ? (
+                <p>[Удалено]</p>
+              ) : msg.type === 'voice' ? (
+                <div className="space-y-2 min-w-[200px]">
+                  <AudioPlayer
+                    src={msg.localAudioUrl || msg.audioUrl}
+                    durationMs={msg.voiceMetadata?.durationMs}
+                    compact
+                  />
+
+                  {msg.uploadStatus === 'uploading' && (
+                    <div className="flex items-center justify-between text-xs opacity-80">
+                      <span>Отправка…</span>
+                      <button
+                        type="button"
+                        onClick={() => handleVoiceCancelUpload(msg.id)}
+                        className="underline hover:opacity-100"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  )}
+
+                  {msg.uploadStatus === 'error' && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-red-300">Ошибка загрузки</span>
+                      <button
+                        type="button"
+                        onClick={() => handleVoiceRetry(msg)}
+                        className="underline"
+                      >
+                        Повторить
+                      </button>
+                    </div>
+                  )}
+
+                  {msg.uploadStatus === 'cancelled' && (
+                    <div className="flex items-center gap-2 text-xs opacity-80">
+                      <span>Отменено</span>
+                      <button
+                        type="button"
+                        onClick={() => handleVoiceRetry(msg)}
+                        className="underline"
+                      >
+                        Отправить снова
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleVoiceRemoveCancelled(msg.id)}
+                        className="underline"
+                      >
+                        Удалить
+                      </button>
+                    </div>
+                  )}
+
+                  <VoiceTranscript
+                    transcript={msg.transcript}
+                    status={msg.transcriptStatus}
+                    isOwn={msg.senderId === user?.id}
+                  />
+
+                  <VoiceSummary
+                    summary={msg.summary}
+                    status={msg.summaryStatus}
+                    isOwn={msg.senderId === user?.id}
+                  />
+                </div>
+              ) : (
+                <p>{msg.content}</p>
+              )}
+
               <div className="text-xs opacity-70 mt-1 flex justify-end gap-1">
                 <span>{msg.timestamp.toLocaleTimeString()}</span>
-                {msg.senderId === user?.id && (
-                  <span>{getStatusIcon(msg.status)}</span>
-                )}
+                {msg.senderId === user?.id && <span>{getStatusIcon(msg.localStatus)}</span>}
                 {msg.isEdited && <span>(ред.)</span>}
               </div>
+
+              {msg.type !== 'voice' && (
+                <TranslationBlock message={msg} isOwn={msg.senderId === user?.id} />
+              )}
             </div>
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
-      <form onSubmit={handleSend} className="p-4 border-t dark:border-gray-700">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder={t('type_message')}
-            className="flex-1 px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
+
+      <RewritePanel
+        draft={newMessage}
+        state={rewrite}
+        onAction={handleAssist}
+        onApply={applyRewrite}
+        onCancel={cancelRewrite}
+        onRetry={retryRewrite}
+      />
+
+      <form onSubmit={handleSend} className="p-4">
+        {showVoiceComposer ? (
+          <VoiceComposer
+            disabled={false}
+            onReady={handleVoiceReady}
+            onCancel={() => {
+              if (voiceDraft?.localUrl) {
+                URL.revokeObjectURL(voiceDraft.localUrl);
+              }
+              setVoiceDraft(null);
+              setShowVoiceComposer(false);
+            }}
           />
-          <button
-            type="submit"
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-          >
-            {t('send')}
-          </button>
-        </div>
+        ) : (
+          <div className="flex gap-2 items-center">
+            <button
+              type="button"
+              onClick={() => setShowVoiceComposer(true)}
+              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
+              title="Голосовое сообщение"
+              aria-label="Голосовое сообщение"
+            >
+              🎤
+            </button>
+            <input
+              type="text"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              placeholder={t('type_message')}
+              className="flex-1 px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 shrink-0"
+            >
+              {t('send')}
+            </button>
+          </div>
+        )}
       </form>
+
+      {chatInfo?.isGroup && (
+        <GroupMembersModal
+          key={membersModalKey}
+          isOpen={showMembersModal}
+          onClose={() => setShowMembersModal(false)}
+          chatId={chatIdNum}
+          onRoleChanged={refreshRoles}
+          onLeave={() => {
+            setShowMembersModal(false);
+            router.push('/chat');
+          }}
+        />
+      )}
     </div>
   );
 }

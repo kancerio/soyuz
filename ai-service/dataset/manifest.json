@@ -1,0 +1,22 @@
+{
+  "dataset_version": "0.1.0",
+  "format": "jsonl",
+  "seed_file": "seed.jsonl",
+  "status": "machine_checked_seed",
+  "records": 15,
+  "tasks": {
+    "translate": 6,
+    "assist": 5,
+    "summary": 2,
+    "document_analysis": 2,
+    "stt": 0
+  },
+  "splits": {
+    "train": 8,
+    "validation": 4,
+    "test": 3
+  },
+  "languages": ["ru", "en", "de", "fr", "es", "zh", "ar"],
+  "assist_actions": ["shorten", "formal", "friendly"],
+  "stt_status": "pending_licensed_audio"
+}

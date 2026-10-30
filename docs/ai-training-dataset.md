@@ -1,0 +1,116 @@
+# Датасет для локальной AI-модели
+
+Ветка `feature/deepseek-dataset-pipeline` содержит воспроизводимый формат
+датасета и его проверку. Сейчас в `ai-service/dataset/seed.jsonl` находится 15
+машинно проверенных примеров для текстовых задач. Это стартовый seed, а не
+финальный датасет для обучения: перед обучением строки с `review_status`
+`unreviewed` или `machine_checked` должен проверить человек.
+
+## Что собираем
+
+| Задача | Вход | Выход | Состояние seed |
+| --- | --- | --- | --- |
+| `translate` | `text`, `source_lang`, `target_lang` | `translated_text` | 6 примеров |
+| `assist` | `prompt`, `context?`, `action` | `result` | 5 примеров |
+| `summary` | массив сообщений с `sender_id`, `text`, `timestamp` | `summary`, дополнительные поля по возможности | 2 примера |
+| `document_analysis` | `document_text`, имя файла | `summary`, классификация, сущности | 2 примера |
+| `stt` | `audio_ref`, язык | `transcript` | ожидает лицензированные аудиофайлы |
+
+Для `/assist` закреплены действия `shorten`, `formal` и `friendly`. Старые
+значения `change_tone` и `suggest` в новый датасет не попадают.
+
+Поддерживаемые коды языка: `ru`, `en`, `de`, `fr`, `es`, `zh`, `ar`.
+
+## Формат строки
+
+```json
+{
+  "id": "translate-ru-en-001",
+  "task": "translate",
+  "split": "train",
+  "input": {"text": "...", "source_lang": "ru", "target_lang": "en"},
+  "output": {"translated_text": "..."},
+  "metadata": {
+    "source": "seed",
+    "synthetic": false,
+    "review_status": "machine_checked"
+  }
+}
+```
+
+Для синтетических строк генератор сам добавляет модель и ссылку на условия
+DeepSeek (`deepseek_api`) или лицензию checkpoint (`deepseek_local`). Для строк
+из публичного набора обязательны `source_ref` и `license`;
+для пользовательских данных — `permission_ref`. Это не позволяет случайно
+смешать в обучении данные без подтверждённого происхождения.
+
+## Проверка
+
+Из папки `ai-service`:
+
+```bash
+python tools/validate_dataset.py dataset/seed.jsonl
+python -m pytest tests -q
+```
+
+Генератор не запускается без явного ключа и названия модели:
+
+```bash
+set DEEPSEEK_API_KEY=...
+set DEEPSEEK_MODEL=<согласованная-модель>
+python tools/generate_dataset.py --task translate --count 50 --output dataset/generated/translate.jsonl
+```
+
+Ключ не записывается в файл и не выводится в лог. Полученные строки остаются
+`unreviewed`, поэтому их нужно проверить и только потом включать в `train`.
+
+Если API-баланс недоступен, подготовлен ноутбук
+`notebooks/deepseek_colab_dataset.ipynb`. Он запускает
+`deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` в 4-битном режиме на GPU Colab,
+сохраняет строки в Google Drive и помечает их как `deepseek_local`. При нехватке
+памяти можно заменить checkpoint на `DeepSeek-R1-Distill-Qwen-1.5B`.
+
+Для следующего этапа есть отдельный
+[`notebooks/deepseek_qlora_training.ipynb`](../notebooks/deepseek_qlora_training.ipynb).
+Он принимает JSONL, подготовленный `tools/prepare_sft_dataset.py`, и сохраняет
+LoRA-адаптер. Этот адаптер ещё нужно объединить с исходным checkpoint и
+конвертировать в GGUF перед импортом в LM Studio.
+
+## Источник и разрешения
+
+Seed-примеры составлены из контрактов проекта и не содержат персональных
+данных. Синтетические примеры создаются DeepSeek API. В [условиях DeepSeek Open
+Platform](https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html)
+указано, что при соблюдении условий и закона входы и выходы можно применять,
+в том числе для обучения других моделей и дистилляции. Команда всё равно
+остаётся ответственной за право отправлять исходные данные в API, за удаление
+PII/секретов и за проверку фактической точности ответов.
+
+Нельзя считать выдачу API единственным эталоном. Минимальный контроль качества:
+
+1. ручная проверка случайной выборки каждой задачи;
+2. отдельный `validation` и `test`, которые не отправляются в обучение;
+3. проверка дубликатов, пустых полей, языка и соответствия JSON-схеме;
+4. фиксация модели, prompt, даты и версии условий для каждой синтетической партии.
+
+## Что ещё нужно получить
+
+1. Согласованный checkpoint/образ и его версию. API-модель и локальный образ —
+   разные режимы, поэтому название нельзя угадывать до загрузки образа.
+2. Характеристики GPU-сервера. Локальный ПК сейчас имеет RTX 2080 Ti с 11 ГБ
+   VRAM; этого достаточно только для небольших квантизированных моделей, но не
+   для полноразмерных DeepSeek-R1/V3.
+3. Разрешённый источник аудио и лицензия для STT. Текстовая строка без аудио не
+   является обучающим примером для распознавания речи.
+
+Открытые R1-Distill-Qwen checkpoints опубликованы DeepSeek под MIT, а базовая
+Qwen-2.5 серия — под Apache 2.0; перед распространением модели всё равно нужно
+сохранить исходные лицензионные уведомления ([официальный список checkpoint-ов и
+лицензий](https://github.com/deepseek-ai/DeepSeek-R1#7-license)).
+
+В качестве кандидата для пилота можно рассмотреть [Mozilla Common Voice через
+Mozilla Data Collective](https://commonvoice.mozilla.org/dav/terms): текущие
+наборы помечены лицензией CC0-1.0 и содержат аудио с транскрипциями. Нужно
+отдельно выбрать локаль и версию, записать их в `source_ref`/`license` и не
+класть скачанные аудиофайлы в Git. Условия Mozilla требуют получать актуальные
+наборы через их площадку.

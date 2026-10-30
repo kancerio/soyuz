@@ -1,4 +1,14 @@
 # Интеграция AI-сервиса
-Вызов перевода: POST /api/v1/translate
-Тело: {"text": "...", "target_lang": "ru"}
-Ответ: {"translated_text": "...", "source_lang_detected": "en"}
+
+Frontend использует адрес из `NEXT_PUBLIC_AI_API_URL` (по умолчанию
+`http://localhost:8000`) и вызывает рабочий AI-сервис напрямую:
+
+- `POST /translate` — перевод последнего сообщения;
+- `POST /assist` — действия `shorten`, `formal`, `friendly`;
+- `POST /summary` — сводка текущего чата;
+- `POST /stt` — загрузка аудиофайла и распознавание в поле ввода;
+- `POST /document-analysis` — выбор документа и отображение результата.
+
+В Docker значение `AI_ALLOWED_ORIGINS` должно содержать origin frontend,
+например `http://localhost:3000`. Кнопки AI показывают состояние загрузки и
+ошибку провайдера в панели чата; результат не отправляется в чат автоматически.

@@ -7,9 +7,14 @@ import {
   ConnectedSocket,
   MessageBody,
 } from '@nestjs/websockets';
+import { Optional } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { ChatsService } from './chats.service';
 import { MessagesService } from '../messages/messages.service';
+import { Message } from '../messages/message.entity';
+import { logger } from '../common/logger';
+import { OnEvent } from '@nestjs/event-emitter';
 
 @WebSocketGateway({
   cors: {
@@ -21,82 +26,155 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  // socketId -> userId
   private socketToUser: Map<string, number> = new Map();
-  // userId -> socketId
   private userToSocket: Map<number, string> = new Map();
-  // userId -> какие чаты слушает
-  private userChats: Map<number, Set<number>> = new Map();
+  private heartbeatInterval: NodeJS.Timeout;
 
   constructor(
     private chatsService: ChatsService,
     private messagesService: MessagesService,
+    @Optional() private jwtService?: JwtService,
   ) {
-    console.log('🔥 ChatGateway initialized');
+    logger.info('ChatGateway initialized', { component: 'ChatGateway', event: 'init' });
+
+    this.heartbeatInterval = setInterval(() => this.checkHeartbeats(), 30000);
   }
 
-  // ========== ПОДКЛЮЧЕНИЕ / ОТКЛЮЧЕНИЕ ==========
-
-  handleConnection(client: Socket) {
-    console.log(`🔌 Client connected: ${client.id}`);
-  }
-
-  async handleDisconnect(client: Socket) {
-    console.log(`🔌 Client disconnected: ${client.id}`);
-    
-    const userId = this.socketToUser.get(client.id);
-    if (userId) {
-      // Удаляем из маппингов
-      this.socketToUser.delete(client.id);
-      this.userToSocket.delete(userId);
-      
-      // Уведомляем всех, что пользователь офлайн
-      this.server.emit('user_offline', { userId });
-      console.log(`📢 User ${userId} went offline`);
+  private checkHeartbeats() {
+    for (const [socketId, userId] of this.socketToUser.entries()) {
+      const socket = this.server.sockets.sockets.get(socketId);
+      if (!socket) {
+        logger.warn('Socket dead - heartbeat missed', {
+          event: 'heartbeat_missed',
+          socket_id: socketId,
+          user_id: userId,
+          timestamp: new Date().toISOString(),
+        });
+        this.socketToUser.delete(socketId);
+        this.userToSocket.delete(userId);
+      }
     }
   }
 
-  // ========== АУТЕНТИФИКАЦИЯ ==========
+  handleConnection(client: Socket) {
+    const clientIp = client.handshake.address || client.conn.remoteAddress;
+    logger.info('WebSocket connection', {
+      event: 'connection',
+      socket_id: client.id,
+      client_ip: clientIp,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  async handleDisconnect(client: Socket) {
+    const userId = this.socketToUser.get(client.id);
+
+    logger.info('WebSocket disconnection', {
+      event: 'disconnection',
+      socket_id: client.id,
+      user_id: userId || null,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (userId) {
+      this.socketToUser.delete(client.id);
+      this.userToSocket.delete(userId);
+      this.server.emit('user_offline', { userId });
+
+      logger.info('User offline broadcast', {
+        event: 'user_offline',
+        user_id: userId,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
 
   @SubscribeMessage('auth')
   async handleAuth(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { userId: number },
+    @MessageBody() data: { token?: string; userId?: number },
   ) {
-    const { userId } = data;
-    
-    // Сохраняем маппинги
+    const startTime = Date.now();
+    const clientIp = client.handshake.address || (client.conn as any)?.remoteAddress;
+
+    let userId: number | undefined;
+    const rawToken = data?.token || (client.handshake?.auth?.token as string);
+
+    if (rawToken && this.jwtService) {
+      try {
+        const cleanToken = rawToken.replace(/^Bearer\s+/i, '');
+        const payload = this.jwtService.verify(cleanToken);
+        userId = Number(payload.sub || payload.userId);
+      } catch (err) {
+        logger.warn('Auth failed - invalid JWT token', {
+          event: 'auth_failed',
+          socket_id: client.id,
+          reason: 'invalid_token',
+          error: err.message,
+          timestamp: new Date().toISOString(),
+        });
+        client.emit('auth_error', { message: 'Invalid or expired token' });
+        return;
+      }
+    } else if (data?.userId && (!this.jwtService || process.env.NODE_ENV === 'test')) {
+      userId = Number(data.userId);
+    } else {
+      logger.warn('Auth failed - missing token', {
+        event: 'auth_failed',
+        socket_id: client.id,
+        reason: 'missing_token',
+        timestamp: new Date().toISOString(),
+      });
+      client.emit('auth_error', { message: 'Authentication token required' });
+      return;
+    }
+
+    logger.info('Auth attempt', {
+      event: 'auth_attempt',
+      socket_id: client.id,
+      user_id: userId,
+      client_ip: clientIp,
+      timestamp: new Date().toISOString(),
+    });
+
     this.socketToUser.set(client.id, userId);
     this.userToSocket.set(userId, client.id);
-    
-    // Получаем все чаты пользователя
+
     const chats = await this.chatsService.getUserChats(userId);
-    const chatIds = chats.map(chat => chat.id);
-    
-    // Сохраняем чаты пользователя
-    this.userChats.set(userId, new Set(chatIds));
-    
-    // Автоматически подключаем ко всем его чатам
+    const chatIds = chats.map((chat) => chat.id);
+
     for (const chatId of chatIds) {
       const roomName = `chat_${chatId}`;
       client.join(roomName);
-      console.log(`User ${userId} joined room ${roomName}`);
+
+      logger.debug('User joined room', {
+        event: 'join_room',
+        user_id: userId,
+        chat_id: chatId,
+        room: roomName,
+        timestamp: new Date().toISOString(),
+      });
     }
-    
-    // Уведомляем всех, что пользователь онлайн
+
     this.server.emit('user_online', { userId });
-    
-    // Подтверждаем аутентификацию
-    client.emit('auth_success', { 
-      userId, 
+
+    const authDuration = Date.now() - startTime;
+
+    client.emit('auth_success', {
+      userId,
       message: 'Authenticated successfully',
       chats: chatIds,
     });
-    
-    console.log(`✅ User ${userId} authenticated, joined ${chatIds.length} chats`);
-  }
 
-  // ========== ПРИСОЕДИНИТЬСЯ К ЧАТУ ==========
+    logger.info('Auth success', {
+      event: 'auth_success',
+      user_id: userId,
+      joined_chats_count: chatIds.length,
+      joined_chats: chatIds,
+      duration_ms: authDuration,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   @SubscribeMessage('join_chat')
   async handleJoinChat(
@@ -105,34 +183,45 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const { chatId } = data;
     const userId = this.socketToUser.get(client.id);
-    
+
     if (!userId) {
+      logger.warn('Join chat failed - not authenticated', {
+        event: 'join_chat_failed',
+        socket_id: client.id,
+        chat_id: chatId,
+        reason: 'not_authenticated',
+        timestamp: new Date().toISOString(),
+      });
       client.emit('error', { message: 'Not authenticated' });
       return;
     }
-    
-    // Проверяем, есть ли доступ к чату
-    const chat = await this.chatsService.findOne(chatId);
-    if (!chat) {
-      client.emit('error', { message: 'Chat not found' });
+
+    const isParticipant = await this.chatsService.isParticipant(chatId, userId);
+    if (!isParticipant) {
+      logger.warn('Join chat failed - not a participant', {
+        event: 'join_chat_failed',
+        user_id: userId,
+        chat_id: chatId,
+        reason: 'not_participant',
+        timestamp: new Date().toISOString(),
+      });
+      client.emit('error', { message: 'You are not a participant of this chat' });
       return;
     }
-    
-    // Присоединяемся к комнате
+
     const roomName = `chat_${chatId}`;
     client.join(roomName);
-    
-    // Сохраняем в список чатов пользователя
-    if (!this.userChats.has(userId)) {
-      this.userChats.set(userId, new Set());
-    }
-    this.userChats.get(userId)!.add(chatId);
-    
-    client.emit('chat_joined', { chatId });
-    console.log(`User ${userId} joined chat ${chatId}`);
-  }
 
-  // ========== ПОКИНУТЬ ЧАТ ==========
+    client.emit('chat_joined', { chatId });
+
+    logger.info('User joined chat', {
+      event: 'join_chat',
+      user_id: userId,
+      chat_id: chatId,
+      room: roomName,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   @SubscribeMessage('leave_chat')
   async handleLeaveChat(
@@ -141,48 +230,79 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const { chatId } = data;
     const userId = this.socketToUser.get(client.id);
-    
-    if (!userId) return;
-    
+
+    if (!userId) {
+      logger.warn('Leave chat failed - not authenticated', {
+        event: 'leave_chat_failed',
+        socket_id: client.id,
+        chat_id: chatId,
+        reason: 'not_authenticated',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
     const roomName = `chat_${chatId}`;
     client.leave(roomName);
-    
-    // Удаляем из списка чатов пользователя
-    this.userChats.get(userId)?.delete(chatId);
-    
-    client.emit('chat_left', { chatId });
-    console.log(`User ${userId} left chat ${chatId}`);
-  }
 
-  // ========== ОТПРАВКА СООБЩЕНИЯ ==========
+    client.emit('chat_left', { chatId });
+
+    logger.info('User left chat', {
+      event: 'leave_chat',
+      user_id: userId,
+      chat_id: chatId,
+      room: roomName,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   @SubscribeMessage('send_message')
   async handleSendMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { chatId: number; content: string },
+    @MessageBody() data: { chatId: number; content: string; sourceLang?: string; targetLang?: string },
   ) {
-    const { chatId, content } = data;
+    const startTime = Date.now();
+    const { chatId, content, sourceLang, targetLang } = data;
     const userId = this.socketToUser.get(client.id);
-    
+
     if (!userId) {
       client.emit('error', { message: 'Not authenticated' });
       return;
     }
-    
+
     try {
-      // Сохраняем сообщение в БД
-      const message = await this.messagesService.sendMessage(chatId, userId, content);
-      
-      // 🚀 РАССЫЛАЕМ ВСЕМ В КОМНАТЕ (включая отправителя)
-      this.server.to(`chat_${chatId}`).emit('new_message', message);
-      
-      console.log(`📨 Message sent to chat ${chatId} from user ${userId}`);
+      // Сохранение, валидация участника и рассылка new_message через единое событие message.created
+      const message = await this.messagesService.sendMessageWithTranslation(
+        chatId,
+        userId,
+        content,
+        sourceLang,
+        targetLang,
+      );
+
+      const totalTime = Date.now() - startTime;
+      logger.info('Message sent via WebSocket', {
+        event: 'send_message',
+        message_id: message.id,
+        user_id: userId,
+        chat_id: chatId,
+        content_length: content.length,
+        total_ms: totalTime,
+        timestamp: new Date().toISOString(),
+      });
+
+      return { success: true, message };
     } catch (error) {
+      logger.error('Send message error', {
+        event: 'send_message_error',
+        user_id: userId,
+        chat_id: chatId,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
       client.emit('error', { message: error.message });
     }
   }
-
-  // ========== РЕДАКТИРОВАНИЕ СООБЩЕНИЯ ==========
 
   @SubscribeMessage('edit_message')
   async handleEditMessage(
@@ -191,30 +311,40 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const { messageId, content } = data;
     const userId = this.socketToUser.get(client.id);
-    
+
     if (!userId) {
       client.emit('error', { message: 'Not authenticated' });
       return;
     }
-    
+
     try {
       const message = await this.messagesService.editMessage(messageId, userId, content);
-      
-      // Рассылаем обновление всем в комнате
+
       this.server.to(`chat_${message.chatId}`).emit('message_updated', {
         id: message.id,
         content: message.content,
         isEdited: message.isEdited,
         editedAt: message.editedAt,
       });
-      
-      console.log(`📝 Message ${messageId} edited by user ${userId}`);
+
+      logger.info('Message edited', {
+        event: 'edit_message',
+        message_id: messageId,
+        user_id: userId,
+        chat_id: message.chatId,
+        timestamp: new Date().toISOString(),
+      });
     } catch (error) {
+      logger.error('Edit message error', {
+        event: 'edit_message_error',
+        user_id: userId,
+        message_id: messageId,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
       client.emit('error', { message: error.message });
     }
   }
-
-  // ========== УДАЛЕНИЕ СООБЩЕНИЯ ==========
 
   @SubscribeMessage('delete_message')
   async handleDeleteMessage(
@@ -223,29 +353,156 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const { messageId } = data;
     const userId = this.socketToUser.get(client.id);
-    
+
     if (!userId) {
       client.emit('error', { message: 'Not authenticated' });
       return;
     }
-    
+
     try {
       const message = await this.messagesService.getMessage(messageId);
-      await this.messagesService.deleteMessage(messageId, userId);
-      
-      // Рассылаем уведомление всем в комнате
+
+      const isParticipant = await this.chatsService.isParticipant(message.chatId, userId);
+      if (!isParticipant) {
+        client.emit('error', { message: 'You are not a participant of this chat' });
+        return;
+      }
+
+      const role = await this.chatsService.getUserRole(message.chatId, userId);
+      const isAuthor = message.userId === userId;
+      const canDeleteAny = role === 'owner' || role === 'admin';
+
+      if (!isAuthor && !canDeleteAny) {
+        client.emit('error', { message: 'You do not have permission to delete this message' });
+        return;
+      }
+
+      await this.messagesService.deleteMessage(messageId, userId, role || undefined);
+
       this.server.to(`chat_${message.chatId}`).emit('message_deleted', {
         id: messageId,
         chatId: message.chatId,
       });
-      
-      console.log(`🗑️ Message ${messageId} deleted by user ${userId}`);
+
+      logger.info('Message deleted', {
+        event: 'delete_message',
+        message_id: messageId,
+        user_id: userId,
+        chat_id: message.chatId,
+        role: role || 'none',
+        is_author: isAuthor,
+        timestamp: new Date().toISOString(),
+      });
     } catch (error) {
+      logger.error('Delete message error', {
+        event: 'delete_message_error',
+        user_id: userId,
+        message_id: messageId,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
       client.emit('error', { message: error.message });
     }
   }
 
-  // ========== ИНДИКАТОР ПЕЧАТАЕТ ==========
+  @SubscribeMessage('message_delivered')
+  async handleMessageDelivered(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { messageId: number },
+  ) {
+    const { messageId } = data;
+    const userId = this.socketToUser.get(client.id);
+
+    if (!userId) {
+      client.emit('error', { message: 'Not authenticated' });
+      return;
+    }
+
+    try {
+      const message = await this.messagesService.getMessage(messageId);
+
+      const isParticipant = await this.chatsService.isParticipant(message.chatId, userId);
+      if (!isParticipant) {
+        client.emit('error', { message: 'You are not a participant of this chat' });
+        return;
+      }
+
+      await this.messagesService.markAsDelivered(messageId, userId);
+
+      const senderSocketId = this.userToSocket.get(message.userId);
+      if (senderSocketId) {
+        this.server.to(senderSocketId).emit('message_status_update', {
+          messageId,
+          status: 'delivered',
+        });
+      }
+
+      logger.debug('Message marked as delivered', {
+        event: 'message_delivered',
+        message_id: messageId,
+        user_id: userId,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Message delivered error', {
+        event: 'message_delivered_error',
+        message_id: messageId,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+      client.emit('error', { message: error.message });
+    }
+  }
+
+  @SubscribeMessage('message_read')
+  async handleMessageRead(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { messageId: number },
+  ) {
+    const { messageId } = data;
+    const userId = this.socketToUser.get(client.id);
+
+    if (!userId) {
+      client.emit('error', { message: 'Not authenticated' });
+      return;
+    }
+
+    try {
+      const message = await this.messagesService.getMessage(messageId);
+
+      const isParticipant = await this.chatsService.isParticipant(message.chatId, userId);
+      if (!isParticipant) {
+        client.emit('error', { message: 'You are not a participant of this chat' });
+        return;
+      }
+
+      await this.messagesService.markAsRead(messageId, userId);
+
+      const senderSocketId = this.userToSocket.get(message.userId);
+      if (senderSocketId) {
+        this.server.to(senderSocketId).emit('message_status_update', {
+          messageId,
+          status: 'read',
+          readAt: new Date().toISOString(),
+        });
+      }
+
+      logger.debug('Message marked as read', {
+        event: 'message_read',
+        message_id: messageId,
+        user_id: userId,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Message read error', {
+        event: 'message_read_error',
+        message_id: messageId,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+      client.emit('error', { message: error.message });
+    }
+  }
 
   @SubscribeMessage('typing')
   async handleTyping(
@@ -254,39 +511,118 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const { chatId, isTyping } = data;
     const userId = this.socketToUser.get(client.id);
-    
+
     if (!userId) return;
-    
-    // Отправляем только в конкретную комнату чата (кроме отправителя)
+
+    const isParticipant = await this.chatsService.isParticipant(chatId, userId);
+    if (!isParticipant) return;
+
     client.to(`chat_${chatId}`).emit('user_typing', {
       userId,
       chatId,
       isTyping,
     });
-  }
 
-  // ========== ПОЛУЧИТЬ ОНЛАЙН-СТАТУС ПОЛЬЗОВАТЕЛЯ ==========
-
-  @SubscribeMessage('get_user_status')
-  async handleGetUserStatus(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { userId: number },
-  ) {
-    const { userId } = data;
-    const isOnline = this.userToSocket.has(userId);
-    
-    client.emit('user_status', {
-      userId,
-      isOnline,
+    logger.debug('Typing indicator', {
+      event: 'typing',
+      user_id: userId,
+      chat_id: chatId,
+      is_typing: isTyping,
+      timestamp: new Date().toISOString(),
     });
   }
 
-  // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
-
-  // Получить всех онлайн пользователей
   @SubscribeMessage('get_online_users')
   async handleGetOnlineUsers(@ConnectedSocket() client: Socket) {
     const onlineUsers = Array.from(this.userToSocket.keys());
+
     client.emit('online_users', { users: onlineUsers });
+
+    logger.debug('Online users requested', {
+      event: 'get_online_users',
+      online_count: onlineUsers.length,
+      users: onlineUsers,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // ========== СОБЫТИЕ СОЗДАНИЯ СООБЩЕНИЯ (ЕДИНЫЙ ИСТОЧНИК ДЛЯ REST И WS) ==========
+
+  @OnEvent('message.created')
+  handleMessageCreated(message: Message) {
+    const roomName = `chat_${message.chatId}`;
+    const senderSocketId = this.userToSocket.get(message.userId);
+    const senderSocket = senderSocketId ? this.server?.sockets?.sockets?.get(senderSocketId) : null;
+
+    if (senderSocket && typeof senderSocket.to === 'function') {
+      senderSocket.to(roomName).emit('new_message', message);
+    } else {
+      this.server.to(roomName).emit('new_message', message);
+    }
+
+    logger.info('Message broadcast', {
+      event: 'broadcast_new_message',
+      message_id: message.id,
+      chat_id: message.chatId,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // ========== СОБЫТИЕ ПЕРЕВОДА ==========
+
+  @OnEvent('message.translated')
+  handleMessageTranslated(payload: {
+    messageId: number;
+    chatId: number;
+    translatedText: string;
+    translateStatus: string;
+  }) {
+    this.server.to(`chat_${payload.chatId}`).emit('message_translated', payload);
+
+    logger.info('Message translated', {
+      event: 'message_translated',
+      message_id: payload.messageId,
+      chat_id: payload.chatId,
+      translate_status: payload.translateStatus,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // ========== СОБЫТИЯ ГОЛОСОВЫХ СООБЩЕНИЙ: ТРАНСКРИПЦИЯ И РЕЗЮМЕ (ЗАДАЧА 5) ==========
+
+  @OnEvent('message.transcribed')
+  handleMessageTranscribed(payload: {
+    messageId: number;
+    chatId: number;
+    transcript: string;
+    sttStatus: string;
+  }) {
+    this.server.to(`chat_${payload.chatId}`).emit('message_transcribed', payload);
+
+    logger.info('Message transcribed broadcast', {
+      event: 'message_transcribed',
+      message_id: payload.messageId,
+      chat_id: payload.chatId,
+      stt_status: payload.sttStatus,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  @OnEvent('message.voice_summary')
+  handleMessageVoiceSummary(payload: {
+    messageId: number;
+    chatId: number;
+    voiceSummary: string;
+    summaryStatus: string;
+  }) {
+    this.server.to(`chat_${payload.chatId}`).emit('message_voice_summary', payload);
+
+    logger.info('Message voice summary broadcast', {
+      event: 'message_voice_summary',
+      message_id: payload.messageId,
+      chat_id: payload.chatId,
+      summary_status: payload.summaryStatus,
+      timestamp: new Date().toISOString(),
+    });
   }
 }
