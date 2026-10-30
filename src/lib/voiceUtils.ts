@@ -12,7 +12,7 @@ export const SUPPORTED_MIME_TYPES = [
 ] as const;
 
 export const MAX_DURATION_MS = 3 * 60 * 1000; // 3 минуты
-export const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 50 МБ
+export const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 МБ
 export const SUMMARY_MIN_TRANSCRIPT_CHARS = 250;
 export const SUMMARY_MIN_DURATION_MS = 60_000;
 
@@ -62,7 +62,7 @@ export function validateAudioFile(file: File): string | null {
     return 'Неподдерживаемый формат. Допустимы: webm, mp3, ogg, wav, m4a';
   }
   if (file.size > MAX_SIZE_BYTES) {
-    return 'Файл слишком большой (макс. 50 МБ)';
+    return 'Файл слишком большой (макс. 20 МБ)';
   }
   return null;
 }
