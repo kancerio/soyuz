@@ -603,6 +603,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       chatId: payload.chatId,
       transcript: payload.transcript,
       sttStatus: payload.sttStatus,
+      transcriptStatus: payload.sttStatus,
     };
     this.server.to(`chat_${payload.chatId}`).emit('message_transcribed', unifiedPayload);
 
@@ -622,13 +623,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     voiceSummary: string;
     summaryStatus: string;
   }) {
+    const mappedStatus = payload.summaryStatus === 'skipped' ? 'not_needed' : payload.summaryStatus;
     const unifiedPayload = {
       id: payload.messageId,
       messageId: payload.messageId,
       chatId: payload.chatId,
       voiceSummary: payload.voiceSummary,
       summary: payload.voiceSummary,
-      summaryStatus: payload.summaryStatus,
+      summaryStatus: mappedStatus,
     };
     this.server.to(`chat_${payload.chatId}`).emit('message_voice_summary', unifiedPayload);
 

@@ -314,12 +314,15 @@ export class TranslationService {
           response = await firstValueFrom(
             this.httpService.post(
               `${this.aiBaseUrl}/summary`,
-              { text: trimmed },
+              {
+                messages: [{ sender_id: 'user', text: trimmed }],
+                language: 'ru',
+              },
               { timeout: this.timeoutMs },
             ),
           );
         } catch (postErr) {
-          if (postErr.response?.status === 404) {
+          if (postErr.response?.status === 404 || postErr.response?.status === 422) {
             // Фолбэк на /secretary для плавного перехода, пока сервис обновляется
             response = await firstValueFrom(
               this.httpService.post(

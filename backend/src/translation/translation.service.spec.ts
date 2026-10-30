@@ -120,7 +120,7 @@ describe('TranslationService - Чистый контракт без legacy-по�
 
       expect(mockHttpService.post).toHaveBeenCalledWith(
         'http://localhost:8000/summary',
-        { text: 'Длинный текст диалога или голосового сообщения' },
+        { messages: [{ sender_id: 'user', text: 'Длинный текст диалога или голосового сообщения' }], language: 'ru' },
         expect.any(Object),
       );
       expect(res.status).toBe('completed');
@@ -146,7 +146,7 @@ describe('TranslationService - Чистый контракт без legacy-по�
       expect(mockHttpService.post).toHaveBeenNthCalledWith(
         1,
         'http://localhost:8000/summary',
-        { text: 'Текст для сводки' },
+        { messages: [{ sender_id: 'user', text: 'Текст для сводки' }], language: 'ru' },
         expect.any(Object),
       );
       expect(mockHttpService.post).toHaveBeenNthCalledWith(

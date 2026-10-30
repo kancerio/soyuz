@@ -21,6 +21,7 @@ import { ChatsService } from '../chats/chats.service';
 import { AssistDto } from './dto/assist.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { EditMessageDto } from './dto/edit-message.dto';
+import { ChatSummaryDto } from './dto/chat-summary.dto';
 
 @Controller('messages')
 @UseGuards(AuthGuard('jwt'))
@@ -105,12 +106,12 @@ async assist(@Body() body: AssistDto) {
   async getChatSummary(
     @Request() req,
     @Param('chatId') chatId: string,
-    @Query('limit') limit?: string,
+    @Query() query?: ChatSummaryDto,
   ) {
     return this.messagesService.getChatSummary(
       +chatId,
       req.user.userId,
-      limit ? +limit : 20,
+      (query && typeof query === 'object' && query.limit != null ? Number(query.limit) : (query ? Number(query) : 20)),
     );
   }
 
@@ -118,12 +119,12 @@ async assist(@Body() body: AssistDto) {
   async createChatSummary(
     @Request() req,
     @Param('chatId') chatId: string,
-    @Body('limit') limit?: number,
+    @Body() body?: ChatSummaryDto,
   ) {
     return this.messagesService.getChatSummary(
       +chatId,
       req.user.userId,
-      limit || 20,
+      (body && typeof body === 'object' && body.limit != null ? Number(body.limit) : (body ? Number(body) : 20)),
     );
   }
 
