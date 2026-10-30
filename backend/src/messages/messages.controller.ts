@@ -32,12 +32,14 @@ export class MessagesController {
 
   @Get('chat/:chatId')
   async getChatMessages(
+    @Request() req,
     @Param('chatId') chatId: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
     return this.messagesService.getChatMessages(
       +chatId,
+      req.user.userId,
       limit ? +limit : 50,
       offset ? +offset : 0,
     );

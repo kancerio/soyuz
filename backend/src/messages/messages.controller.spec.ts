@@ -35,7 +35,21 @@ describe('MessagesController', () => {
     controller = module.get<MessagesController>(MessagesController);
   });
 
-  it('should be defined', () => {
+    it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  describe('getChatMessages', () => {
+    it('должен передавать userId из req.user в сервис для проверки прав доступа', async () => {
+      const mockReq = { user: { userId: 42 } };
+      await controller.getChatMessages(mockReq, '7', '20', '10');
+
+      expect((controller as any).messagesService.getChatMessages).toHaveBeenCalledWith(
+        7,
+        42,
+        20,
+        10,
+      );
+    });
   });
 });

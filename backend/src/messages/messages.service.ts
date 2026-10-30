@@ -108,7 +108,17 @@ export class MessagesService {
     private eventEmitter: EventEmitter2,
   ) {}
 
-  async getChatMessages(chatId: number, limit: number = 50, offset: number = 0): Promise<Message[]> {
+  async getChatMessages(
+    chatId: number,
+    userId: number,
+    limit: number = 50,
+    offset: number = 0,
+  ): Promise<Message[]> {
+    const isParticipant = await this.chatsService.isParticipant(chatId, userId);
+    if (!isParticipant) {
+      throw new ForbiddenException('Вы не являетесь участником этого чата');
+    }
+
     return this.messagesRepository.find({
       where: { chatId },
       order: { createdAt: 'ASC' },

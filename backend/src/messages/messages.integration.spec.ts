@@ -163,7 +163,7 @@ describe('Интеграционные тесты (Задача 6)', () => {
       );
 
       // 2. Повторное открытие истории чата
-      const history = await service.getChatMessages(10);
+      const history = await service.getChatMessages(10, 1);
       expect(history.length).toBe(1);
       expect(history[0]).toMatchObject({
         id: sentMessage.id,
@@ -201,14 +201,19 @@ describe('Интеграционные тесты (Задача 6)', () => {
         }),
       );
 
-      // 2. Повторное открытие истории чата: сообщение НЕ сломано и доступно
-      const history = await service.getChatMessages(10);
+            // 2. Повторное открытие истории чата: сообщение НЕ сломано и доступно
+      const history = await service.getChatMessages(10, 1);
       expect(history.length).toBe(1);
       expect(history[0]).toMatchObject({
         id: sentMessage.id,
         content: 'Важное сообщение при сбое ИИ',
         translateStatus: 'failed',
       });
+
+      // 3. Негативный тест: посторонний пользователь (userId: 999) блокируется при чтении истории
+      await expect(
+        service.getChatMessages(10, 999),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -280,7 +285,7 @@ describe('Интеграционные тесты (Задача 6)', () => {
       );
 
       // 2. Повторное открытие истории чата
-      const history = await service.getChatMessages(10);
+      const history = await service.getChatMessages(10, 1);
       expect(history.length).toBe(1);
       expect(history[0]).toMatchObject({
         id: voiceMessage.id,
@@ -333,7 +338,7 @@ describe('Интеграционные тесты (Задача 6)', () => {
       );
 
       // 2. Повторное открытие истории: сообщение цело и доступно
-      const history = await service.getChatMessages(10);
+      const history = await service.getChatMessages(10, 1);
       expect(history.length).toBe(1);
       expect(history[0]).toMatchObject({
         id: voiceMessage.id,

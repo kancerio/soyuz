@@ -153,6 +153,25 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
     );
   });
 
+    describe('История сообщений и права доступа (Проверка участника чата)', () => {
+    it('должен возвращать историю сообщений, если пользователь участник чата', async () => {
+      mockMessagesRepository.find.mockResolvedValueOnce([
+        { id: 1, content: 'Привет', chatId: 1 },
+      ]);
+
+      const messages = await service.getChatMessages(1, 10, 50, 0);
+
+      expect(mockChatsService.isParticipant).toHaveBeenCalledWith(1, 10);
+      expect(messages).toHaveLength(1);
+    });
+
+    it('должен блокировать получение истории сообщений с ошибкой 403 Forbidden, если пользователь не участник чата', async () => {
+      await expect(
+        service.getChatMessages(1, 999, 50, 0),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
   describe('Voice Messages (Задача 2)', () => {
     const validAudioFile: any = {
       buffer: Buffer.from('FAKE_AUDIO_DATA_FOR_TESTING'),
