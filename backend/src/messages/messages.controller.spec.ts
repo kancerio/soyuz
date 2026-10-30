@@ -20,6 +20,7 @@ describe('MessagesController', () => {
             assist: jest.fn(),
             editMessage: jest.fn(),
             deleteMessage: jest.fn(),
+            getChatSummary: jest.fn(),
           },
         },
         {
@@ -49,6 +50,29 @@ describe('MessagesController', () => {
         42,
         20,
         10,
+      );
+    });
+  });
+  describe('getChatSummary', () => {
+    it('должен передавать userId и limit в messagesService.getChatSummary', async () => {
+      const mockReq = { user: { userId: 42 } };
+      await controller.getChatSummary(mockReq, '7', '15');
+
+      expect((controller as any).messagesService.getChatSummary).toHaveBeenCalledWith(
+        7,
+        42,
+        15,
+      );
+    });
+
+    it('должен использовать дефолтный limit 20, если limit не передан', async () => {
+      const mockReq = { user: { userId: 42 } };
+      await controller.getChatSummary(mockReq, '7');
+
+      expect((controller as any).messagesService.getChatSummary).toHaveBeenCalledWith(
+        7,
+        42,
+        20,
       );
     });
   });

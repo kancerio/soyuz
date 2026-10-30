@@ -91,6 +91,8 @@ export class MessagesController {
       req.user.userId,
     );
     res.setHeader('Content-Type', mimeType);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'private, max-age=86400');
     return res.sendFile(filePath);
   }
 
@@ -98,6 +100,32 @@ export class MessagesController {
 async assist(@Body() body: AssistDto) {
   return this.messagesService.assist(body.text, body.action);
 }
+
+    @Get('chat/:chatId/summary')
+  async getChatSummary(
+    @Request() req,
+    @Param('chatId') chatId: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.messagesService.getChatSummary(
+      +chatId,
+      req.user.userId,
+      limit ? +limit : 20,
+    );
+  }
+
+  @Post('chat/:chatId/summary')
+  async createChatSummary(
+    @Request() req,
+    @Param('chatId') chatId: string,
+    @Body('limit') limit?: number,
+  ) {
+    return this.messagesService.getChatSummary(
+      +chatId,
+      req.user.userId,
+      limit || 20,
+    );
+  }
 
   @Put(':messageId')
   async editMessage(

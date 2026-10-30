@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { TranslationService } from './translation.service';
 import { RedisService } from '../redis/redis.service';
 
@@ -104,6 +104,59 @@ describe('TranslationService - Чистый контракт без legacy-по�
 
       expect(res.status).toBe('completed');
       expect(res.translatedText).toBe('Hello');
+    });
+  });
+  describe('generateSummary() - согласованный эндпоинт /summary', () => {
+    it('должен отправлять { text } на /summary и возвращать summary', async () => {
+      mockHttpService.post.mockReturnValueOnce(
+        of({
+          data: {
+            summary: 'Краткая суть переписки',
+          },
+        }),
+      );
+
+      const res = await service.generateSummary('Длинный текст диалога или голосового сообщения');
+
+      expect(mockHttpService.post).toHaveBeenCalledWith(
+        'http://localhost:8000/summary',
+        { text: 'Длинный текст диалога или голосового сообщения' },
+        expect.any(Object),
+      );
+      expect(res.status).toBe('completed');
+      expect(res.summary).toBe('Краткая суть переписки');
+    });
+
+    it('должен использовать фолбэк на /secretary, если /summary возвращает 404', async () => {
+      const notFoundErr = new Error('Not found');
+      (notFoundErr as any).response = { status: 404 };
+
+      mockHttpService.post
+        .mockReturnValueOnce(throwError(() => notFoundErr))
+        .mockReturnValueOnce(
+          of({
+            data: {
+              message: 'Итоги обсуждения: суть',
+            },
+          }),
+        );
+
+      const res = await service.generateSummary('Текст для сводки');
+
+      expect(mockHttpService.post).toHaveBeenNthCalledWith(
+        1,
+        'http://localhost:8000/summary',
+        { text: 'Текст для сводки' },
+        expect.any(Object),
+      );
+      expect(mockHttpService.post).toHaveBeenNthCalledWith(
+        2,
+        'http://localhost:8000/secretary',
+        { action: 'summary', details: 'Текст для сводки' },
+        expect.any(Object),
+      );
+      expect(res.status).toBe('completed');
+      expect(res.summary).toBe('Итоги обсуждения: суть');
     });
   });
 });

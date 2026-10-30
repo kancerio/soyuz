@@ -298,7 +298,7 @@ export class TranslationService {
   }
 
   /**
-   * Генерация краткого резюме текста через AI /secretary
+   * Генерация краткого резюме текста через согласованный AI API /summary
    */
   async generateSummary(text: string): Promise<SummaryResult> {
     const trimmed = text.trim();
@@ -308,15 +308,37 @@ export class TranslationService {
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        const response = await firstValueFrom(
-          this.httpService.post(
-            `${this.aiBaseUrl}/secretary`,
-            { action: 'summary', details: trimmed },
-            { timeout: this.timeoutMs },
-          ),
-        );
+        let response;
+        try {
+          // Согласованный контракт: POST /summary { text }
+          response = await firstValueFrom(
+            this.httpService.post(
+              `${this.aiBaseUrl}/summary`,
+              { text: trimmed },
+              { timeout: this.timeoutMs },
+            ),
+          );
+        } catch (postErr) {
+          if (postErr.response?.status === 404) {
+            // Фолбэк на /secretary для плавного перехода, пока сервис обновляется
+            response = await firstValueFrom(
+              this.httpService.post(
+                `${this.aiBaseUrl}/secretary`,
+                { action: 'summary', details: trimmed },
+                { timeout: this.timeoutMs },
+              ),
+            );
+          } else {
+            throw postErr;
+          }
+        }
 
-        const summary = response.data.message || '';
+        const summary =
+          response.data.summary ||
+          response.data.result ||
+          response.data.message ||
+          '';
+
         return {
           summary,
           status: 'completed',
