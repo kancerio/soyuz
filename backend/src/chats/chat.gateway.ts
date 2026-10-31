@@ -597,7 +597,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     transcript: string;
     transcriptStatus: string;
   }) {
-    this.server.to(`chat_${payload.chatId}`).emit('message_transcribed', payload);
+    const unifiedPayload = {
+      id: payload.messageId,
+      messageId: payload.messageId,
+      chatId: payload.chatId,
+      transcript: payload.transcript,
+      sttStatus: payload.sttStatus,
+      transcriptStatus: payload.sttStatus,
+    };
+    this.server.to(`chat_${payload.chatId}`).emit('message_transcribed', unifiedPayload);
 
     logger.info('Message transcribed broadcast', {
       event: 'message_transcribed',
@@ -615,7 +623,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     summary: string;
     summaryStatus: string;
   }) {
-    this.server.to(`chat_${payload.chatId}`).emit('message_voice_summary', payload);
+    const mappedStatus = payload.summaryStatus === 'skipped' ? 'not_needed' : payload.summaryStatus;
+    const unifiedPayload = {
+      id: payload.messageId,
+      messageId: payload.messageId,
+      chatId: payload.chatId,
+      voiceSummary: payload.voiceSummary,
+      summary: payload.voiceSummary,
+      summaryStatus: mappedStatus,
+    };
+    this.server.to(`chat_${payload.chatId}`).emit('message_voice_summary', unifiedPayload);
 
     logger.info('Message voice summary broadcast', {
       event: 'message_voice_summary',

@@ -163,7 +163,7 @@ describe('Интеграционные тесты (Задача 6)', () => {
       );
 
       // 2. Повторное открытие истории чата
-      const history = await service.getChatMessages(10);
+      const history = await service.getChatMessages(10, 1);
       expect(history.length).toBe(1);
       expect(history[0]).toMatchObject({
         id: sentMessage.id,
@@ -201,14 +201,19 @@ describe('Интеграционные тесты (Задача 6)', () => {
         }),
       );
 
-      // 2. Повторное открытие истории чата: сообщение НЕ сломано и доступно
-      const history = await service.getChatMessages(10);
+            // 2. Повторное открытие истории чата: сообщение НЕ сломано и доступно
+      const history = await service.getChatMessages(10, 1);
       expect(history.length).toBe(1);
       expect(history[0]).toMatchObject({
         id: sentMessage.id,
         content: 'Важное сообщение при сбое ИИ',
         translateStatus: 'failed',
       });
+
+      // 3. Негативный тест: посторонний пользователь (userId: 999) блокируется при чтении истории
+      await expect(
+        service.getChatMessages(10, 999),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -231,14 +236,14 @@ describe('Интеграционные тесты (Задача 6)', () => {
 
     it('успешный поток voice → STT → summary и проверка доступа участников', async () => {
       mockTranslationService.transcribeAudio.mockResolvedValueOnce({
-        transcript: 'Распознанный голос интеграционного теста',
+        transcript: 'Распознанный голос интеграционного теста для проверки формирования краткого резюме',
         summary: undefined,
         language: 'ru',
         status: 'completed',
       });
 
-      mockTranslationService.generateSummary.mockResolvedValueOnce({
-        summary: 'Краткое содержание голосового',
+      mockTranslationService.generateSummary.mockResolvedValue({
+        summary: 'Краткое содержание переписки и голосового',
         status: 'completed',
       });
 
@@ -265,8 +270,8 @@ describe('Интеграционные тесты (Задача 6)', () => {
         'message.transcribed',
         expect.objectContaining({
           messageId: voiceMessage.id,
-          transcript: 'Распознанный голос интеграционного теста',
-          transcriptStatus: 'completed',
+          transcript: 'Распознанный голос интеграционного теста для проверки формирования краткого резюме',
+          sttStatus: 'completed',
         }),
       );
 
@@ -274,20 +279,20 @@ describe('Интеграционные тесты (Задача 6)', () => {
         'message.voice_summary',
         expect.objectContaining({
           messageId: voiceMessage.id,
-          summary: 'Краткое содержание голосового',
+          voiceSummary: 'Краткое содержание переписки и голосового',
           summaryStatus: 'completed',
         }),
       );
 
       // 2. Повторное открытие истории чата
-      const history = await service.getChatMessages(10);
+      const history = await service.getChatMessages(10, 1);
       expect(history.length).toBe(1);
       expect(history[0]).toMatchObject({
         id: voiceMessage.id,
         voiceFileId: voiceMessage.voiceFileId,
-        transcript: 'Распознанный голос интеграционного теста',
+        transcript: 'Распознанный голос интеграционного теста для проверки формирования краткого резюме',
         sttStatus: 'completed',
-        voiceSummary: 'Краткое содержание голосового',
+        voiceSummary: 'Краткое содержание переписки и голосового',
         summaryStatus: 'completed',
       });
 
@@ -300,9 +305,18 @@ describe('Интеграционные тесты (Задача 6)', () => {
       tmpVoiceFile = fileResult.filePath;
 
       // 4. Посторонний пользователь (userId: 999) блокируется с 403
+      await expect(service.getVoiceFile(voiceMessage.voiceFileId!, 999)).rejects.toThrow(ForbiddenException);
+      // 5. Проверка краткой сводки переписки чата (Задача 5)
+      const chatSummaryResult = await service.getChatSummary(10, 1, 10);
+      expect(chatSummaryResult.chatId).toBe(10);
+      expect(chatSummaryResult.status).toBe('completed');
+      expect(chatSummaryResult.summary).toBeDefined();
+
+      // 6. Негативная проверка: посторонний пользователь не имеет доступа к сводке
       await expect(
-        service.getVoiceFile(voiceMessage.voiceFileId!, 999),
+        service.getChatSummary(10, 999, 10),
       ).rejects.toThrow(ForbiddenException);
+
     });
 
     it('сбой STT/Summary (timeout / 503): аудиофайл и сообщение целы, статус failed, доступно в истории', async () => {
@@ -333,7 +347,7 @@ describe('Интеграционные тесты (Задача 6)', () => {
       );
 
       // 2. Повторное открытие истории: сообщение цело и доступно
-      const history = await service.getChatMessages(10);
+      const history = await service.getChatMessages(10, 1);
       expect(history.length).toBe(1);
       expect(history[0]).toMatchObject({
         id: voiceMessage.id,

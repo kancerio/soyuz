@@ -22,8 +22,7 @@ import { ChatsService } from '../chats/chats.service';
 import { AssistDto } from './dto/assist.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { EditMessageDto } from './dto/edit-message.dto';
-import { TranslateDto } from './dto/translate.dto';
-import { SummaryDto } from './dto/summary.dto';
+import { ChatSummaryDto } from './dto/chat-summary.dto';
 
 @Controller('messages')
 @UseGuards(AuthGuard('jwt'))
@@ -35,12 +34,14 @@ export class MessagesController {
 
   @Get('chat/:chatId')
   async getChatMessages(
+    @Request() req,
     @Param('chatId') chatId: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
     return this.messagesService.getChatMessages(
       +chatId,
+      req.user.userId,
       limit ? +limit : 50,
       offset ? +offset : 0,
     );
@@ -119,6 +120,8 @@ export class MessagesController {
       req.user.userId,
     );
     res.setHeader('Content-Type', mimeType);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'private, max-age=86400');
     return res.sendFile(filePath);
   }
 
@@ -126,6 +129,32 @@ export class MessagesController {
 async assist(@Body() body: AssistDto) {
   return this.messagesService.assist(body.text, body.action);
 }
+
+    @Get('chat/:chatId/summary')
+  async getChatSummary(
+    @Request() req,
+    @Param('chatId') chatId: string,
+    @Query() query?: ChatSummaryDto,
+  ) {
+    return this.messagesService.getChatSummary(
+      +chatId,
+      req.user.userId,
+      (query && typeof query === 'object' && query.limit != null ? Number(query.limit) : (query ? Number(query) : 20)),
+    );
+  }
+
+  @Post('chat/:chatId/summary')
+  async createChatSummary(
+    @Request() req,
+    @Param('chatId') chatId: string,
+    @Body() body?: ChatSummaryDto,
+  ) {
+    return this.messagesService.getChatSummary(
+      +chatId,
+      req.user.userId,
+      (body && typeof body === 'object' && body.limit != null ? Number(body.limit) : (body ? Number(body) : 20)),
+    );
+  }
 
   @Put(':messageId')
   async editMessage(

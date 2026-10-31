@@ -325,7 +325,9 @@ export class TranslationService {
     };
   }
 
-  /** Generate a summary using the same structured contract as chat summaries. */
+  /**
+   * Генерация краткого резюме текста через согласованный AI API /summary
+   */
   async generateSummary(text: string): Promise<SummaryResult> {
     const trimmed = text.trim();
     if (!trimmed) {
@@ -357,19 +359,40 @@ export class TranslationService {
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        const response = await firstValueFrom(
-          this.httpService.post(
-            `${this.aiBaseUrl}/summary`,
-            { messages, language },
-            { timeout: this.timeoutMs },
-          ),
-        );
-
-        const data = response.data;
-        const summary = typeof data.summary === 'string' ? data.summary.trim() : '';
-        if (!summary) {
-          return failed;
+        let response;
+        try {
+          // Согласованный контракт: POST /summary { text }
+          response = await firstValueFrom(
+            this.httpService.post(
+              `${this.aiBaseUrl}/summary`,
+              {
+                messages: [{ sender_id: 'user', text: trimmed }],
+                language: 'ru',
+              },
+              { timeout: this.timeoutMs },
+            ),
+          );
+        } catch (postErr) {
+          if (postErr.response?.status === 404 || postErr.response?.status === 422) {
+            // Фолбэк на /secretary для плавного перехода, пока сервис обновляется
+            response = await firstValueFrom(
+              this.httpService.post(
+                `${this.aiBaseUrl}/secretary`,
+                { action: 'summary', details: trimmed },
+                { timeout: this.timeoutMs },
+              ),
+            );
+          } else {
+            throw postErr;
+          }
         }
+
+        const summary =
+          response.data.summary ||
+          response.data.result ||
+          response.data.message ||
+          '';
+
         return {
           summary,
           decisions: Array.isArray(data.decisions) ? data.decisions : [],

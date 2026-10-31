@@ -183,4 +183,57 @@ describe('TranslationService - Чистый контракт без legacy-по�
     });
     expect(mockHttpService.post).toHaveBeenCalledTimes(2);
   });
+  describe('generateSummary() - согласованный эндпоинт /summary', () => {
+    it('должен отправлять { text } на /summary и возвращать summary', async () => {
+      mockHttpService.post.mockReturnValueOnce(
+        of({
+          data: {
+            summary: 'Краткая суть переписки',
+          },
+        }),
+      );
+
+      const res = await service.generateSummary('Длинный текст диалога или голосового сообщения');
+
+      expect(mockHttpService.post).toHaveBeenCalledWith(
+        'http://localhost:8000/summary',
+        { messages: [{ sender_id: 'user', text: 'Длинный текст диалога или голосового сообщения' }], language: 'ru' },
+        expect.any(Object),
+      );
+      expect(res.status).toBe('completed');
+      expect(res.summary).toBe('Краткая суть переписки');
+    });
+
+    it('должен использовать фолбэк на /secretary, если /summary возвращает 404', async () => {
+      const notFoundErr = new Error('Not found');
+      (notFoundErr as any).response = { status: 404 };
+
+      mockHttpService.post
+        .mockReturnValueOnce(throwError(() => notFoundErr))
+        .mockReturnValueOnce(
+          of({
+            data: {
+              message: 'Итоги обсуждения: суть',
+            },
+          }),
+        );
+
+      const res = await service.generateSummary('Текст для сводки');
+
+      expect(mockHttpService.post).toHaveBeenNthCalledWith(
+        1,
+        'http://localhost:8000/summary',
+        { messages: [{ sender_id: 'user', text: 'Текст для сводки' }], language: 'ru' },
+        expect.any(Object),
+      );
+      expect(mockHttpService.post).toHaveBeenNthCalledWith(
+        2,
+        'http://localhost:8000/secretary',
+        { action: 'summary', details: 'Текст для сводки' },
+        expect.any(Object),
+      );
+      expect(res.status).toBe('completed');
+      expect(res.summary).toBe('Итоги обсуждения: суть');
+    });
+  });
 });

@@ -26,7 +26,16 @@ describe('MessagesController', () => {
       providers: [
         {
           provide: MessagesService,
-          useValue: messagesService,
+          useValue: {
+            getChatMessages: jest.fn(),
+            sendMessageWithTranslation: jest.fn(),
+            sendVoiceMessage: jest.fn(),
+            getVoiceFile: jest.fn(),
+            assist: jest.fn(),
+            editMessage: jest.fn(),
+            deleteMessage: jest.fn(),
+            getChatSummary: jest.fn(),
+          },
         },
         {
           provide: ChatsService,
@@ -41,33 +50,44 @@ describe('MessagesController', () => {
     controller = module.get<MessagesController>(MessagesController);
   });
 
-  it('should be defined', () => {
+    it('should be defined', () => {
     expect(controller).toBeDefined();
   });
 
-  it('routes text translation to the backend AI service', async () => {
-    const body = { text: 'Привет', source_lang: 'ru', target_lang: 'en' };
-    messagesService.translateText.mockResolvedValue({ translatedText: 'Hello' });
+  describe('getChatMessages', () => {
+    it('должен передавать userId из req.user в сервис для проверки прав доступа', async () => {
+      const mockReq = { user: { userId: 42 } };
+      await controller.getChatMessages(mockReq, '7', '20', '10');
 
-    await expect(controller.translate(body)).resolves.toEqual({ translatedText: 'Hello' });
-    expect(messagesService.translateText).toHaveBeenCalledWith('Привет', 'ru', 'en');
+      expect((controller as any).messagesService.getChatMessages).toHaveBeenCalledWith(
+        7,
+        42,
+        20,
+        10,
+      );
+    });
   });
+  describe('getChatSummary', () => {
+    it('должен передавать userId и limit в messagesService.getChatSummary', async () => {
+      const mockReq = { user: { userId: 42 } };
+      await controller.getChatSummary(mockReq, '7', '15');
 
-  it('routes chat summaries using the shared message contract', async () => {
-    const body = {
-      language: 'ru',
-      messages: [{ sender_id: '5', text: 'Обсудили сроки' }],
-    };
-    messagesService.summarizeMessages.mockResolvedValue({ summary: 'Итог' });
+      expect((controller as any).messagesService.getChatSummary).toHaveBeenCalledWith(
+        7,
+        42,
+        15,
+      );
+    });
 
-    await expect(controller.summarize(body)).resolves.toEqual({ summary: 'Итог' });
-    expect(messagesService.summarizeMessages).toHaveBeenCalledWith(body.messages, 'ru');
-  });
+    it('должен использовать дефолтный limit 20, если limit не передан', async () => {
+      const mockReq = { user: { userId: 42 } };
+      await controller.getChatSummary(mockReq, '7');
 
-  it('rejects a missing transcription file instead of returning a mock transcript', async () => {
-    await expect(controller.transcribeAudio(undefined)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-    expect(messagesService.transcribeAudio).not.toHaveBeenCalled();
+      expect((controller as any).messagesService.getChatSummary).toHaveBeenCalledWith(
+        7,
+        42,
+        20,
+      );
+    });
   });
 });
