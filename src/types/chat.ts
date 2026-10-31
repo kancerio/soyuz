@@ -56,6 +56,7 @@ export interface Message {
 
   // --- Voice ---
   type?: MessageType;
+  voiceFileId?: string | null;
   audioUrl?: string | null;
   localAudioUrl?: string | null;
   transcript?: string | null;

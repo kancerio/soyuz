@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, BadRequestException, BadGatewayException, GatewayTimeoutException } from '@nestjs/common';
 
 jest.mock('@nestjs/event-emitter', () => {
   class MockEventEmitter2 {
@@ -66,6 +66,21 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
         targetLang: 'en',
         status: 'completed',
         mock: false,
+      }),
+      assist: jest.fn().mockResolvedValue({
+        originalText: 'Черновик',
+        resultText: 'Улучшенный текст',
+        action: 'friendly',
+        status: 'completed',
+        mock: false,
+      }),
+      summarizeMessages: jest.fn().mockResolvedValue({
+        summary: 'Итог',
+        decisions: [],
+        participants: ['1'],
+        language: 'ru',
+        provider: 'lmstudio',
+        status: 'completed',
       }),
       transcribeAudio: jest.fn().mockResolvedValue({
         transcript: 'Распознанный голос достаточной длины для проверки формирования выжимки голосового',
@@ -315,7 +330,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
           'message.voice_summary',
           expect.objectContaining({
             messageId: 101,
-            voiceSummary: 'Краткое резюме',
+            summary: 'Краткое резюме',
             summaryStatus: 'completed',
           }),
         );
@@ -350,7 +365,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
           'message.transcribed',
           expect.objectContaining({
             messageId: 101,
-            sttStatus: 'failed',
+            transcriptStatus: 'failed',
           }),
         );
       } finally {

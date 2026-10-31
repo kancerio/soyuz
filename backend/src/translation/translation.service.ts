@@ -26,6 +26,9 @@ export interface SttResult {
   summary?: string;
   language: string;
   status: 'completed' | 'failed';
+  provider?: string;
+  error?: string;
+  providerStatus?: number;
 }
 
 export interface SummaryResult {
@@ -33,11 +36,25 @@ export interface SummaryResult {
   status: 'completed' | 'failed';
 }
 
+export interface SummaryMessageInput {
+  sender_id: string;
+  text: string;
+  timestamp?: string;
+}
+
+export interface StructuredSummaryResult extends SummaryResult {
+  decisions: string[];
+  participants: string[];
+  language: string;
+  provider: string;
+}
+
 @Injectable()
 export class TranslationService {
   private readonly logger = new Logger(TranslationService.name);
   private readonly aiBaseUrl: string;
-  private readonly timeoutMs = 10000;
+  private readonly timeoutMs: number;
+  private readonly sttTimeoutMs: number;
   private readonly maxRetries = 1;
 
   constructor(
@@ -46,6 +63,8 @@ export class TranslationService {
     private readonly redisService: RedisService,
   ) {
     this.aiBaseUrl = this.configService.get('AI_SERVICE_URL', 'http://localhost:8000');
+    this.timeoutMs = this.configService.get<number>('AI_REQUEST_TIMEOUT_MS', 120000);
+    this.sttTimeoutMs = this.configService.get<number>('AI_STT_TIMEOUT_MS', 120000);
   }
 
   /**
@@ -215,10 +234,14 @@ export class TranslationService {
             timeout: this.timeoutMs,
           }),
         );
+        const translatedText = response.data.result || response.data.translated_text;
+        if (typeof translatedText !== 'string' || !translatedText.trim()) {
+          throw new Error('AI translation response did not contain result');
+        }
 
         return {
           originalText: text,
-          translatedText: response.data.translated_text,
+          translatedText: translatedText.trim(),
           sourceLang: response.data.source_lang || sourceLang,
           targetLang: response.data.target_lang || targetLang,
           status: 'completed',
@@ -261,6 +284,7 @@ export class TranslationService {
     mimeType: string,
     language: string = 'ru',
   ): Promise<SttResult> {
+    let lastError: any = null;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
         const formData = new FormData();
@@ -270,7 +294,7 @@ export class TranslationService {
 
         const response = await firstValueFrom(
           this.httpService.post(`${this.aiBaseUrl}/stt`, formData, {
-            timeout: this.timeoutMs,
+            timeout: this.sttTimeoutMs,
           }),
         );
 
@@ -279,8 +303,10 @@ export class TranslationService {
           summary: response.data.summary || undefined,
           language: response.data.language || language,
           status: 'completed',
+          provider: response.data.provider,
         };
       } catch (error) {
+        lastError = error;
         const status = error.response?.status;
         if (status === 503 || error.code === 'ECONNABORTED') {
           this.logger.warn(`STT attempt ${attempt + 1} failed (${status || 'timeout'}), retrying...`);
@@ -294,6 +320,8 @@ export class TranslationService {
       transcript: '',
       language,
       status: 'failed',
+      error: lastError?.message,
+      providerStatus: lastError?.response?.status,
     };
   }
 
@@ -304,6 +332,29 @@ export class TranslationService {
     const trimmed = text.trim();
     if (!trimmed) {
       return { summary: '', status: 'failed' };
+    }
+
+    const result = await this.summarizeMessages(
+      [{ sender_id: 'voice', text: trimmed }],
+      'ru',
+    );
+    return { summary: result.summary, status: result.status };
+  }
+
+  async summarizeMessages(
+    messages: SummaryMessageInput[],
+    language: string,
+  ): Promise<StructuredSummaryResult> {
+    const failed: StructuredSummaryResult = {
+      summary: '',
+      decisions: [],
+      participants: [],
+      language,
+      provider: 'unknown',
+      status: 'failed',
+    };
+    if (!messages.length || messages.some((message) => !message.text.trim())) {
+      return failed;
     }
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
@@ -344,6 +395,10 @@ export class TranslationService {
 
         return {
           summary,
+          decisions: Array.isArray(data.decisions) ? data.decisions : [],
+          participants: Array.isArray(data.participants) ? data.participants : [],
+          language: data.language || language,
+          provider: data.provider || 'unknown',
           status: 'completed',
         };
       } catch (error) {
@@ -356,10 +411,7 @@ export class TranslationService {
       }
     }
 
-    return {
-      summary: '',
-      status: 'failed',
-    };
+    return failed;
   }
 
   /**

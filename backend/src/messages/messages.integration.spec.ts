@@ -342,7 +342,7 @@ describe('Интеграционные тесты (Задача 6)', () => {
         'message.transcribed',
         expect.objectContaining({
           messageId: voiceMessage.id,
-          sttStatus: 'failed',
+          transcriptStatus: 'failed',
         }),
       );
 

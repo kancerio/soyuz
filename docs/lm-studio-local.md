@@ -93,9 +93,57 @@ python tools/local_whisper_server.py
 для запуска FastAPI непосредственно на хосте используйте
 `http://127.0.0.1:9000/v1`.
 
+## Запуск полного локального контура
+
+1. Запустите сервер в LM Studio и загрузите `qwen3.5-4b` с контекстом 4096.
+2. Скопируйте корневой `.env.example` в `.env`; задайте `AI_MOCK_MODE=false`,
+   `AI_PROVIDER=lmstudio`, `AI_MODEL=qwen3.5-4b`,
+   `STT_PROVIDER=openai_compatible`. Для Compose оставьте URL моделей на
+   `host.docker.internal`.
+3. В отдельном терминале из `ai-service` запустите локальный Whisper. Для
+   Compose укажите `WHISPER_HOST=0.0.0.0`; без контейнеров можно оставить
+   `127.0.0.1` и адрес `STT_BASE_URL=http://127.0.0.1:9000/v1`.
+4. Поднимите хранилища и AI-сервис: `docker compose up -d postgres redis ai-service`.
+5. Создайте `backend/.env` из `backend/.env.example`; для compose-базы задайте
+   `DB_HOST=localhost`, `DB_USERNAME=messenger`, `DB_PASSWORD` равный корневому
+   `DB_PASSWORD`, `DB_DATABASE=messenger_db`, `REDIS_HOST=localhost`,
+   `AI_SERVICE_URL=http://127.0.0.1:8000`.
+6. Запустите backend из `backend` командой `npm install` и `npm run start:dev`,
+   затем frontend из корня командой `npm install` и `npm run dev`.
+
+Чтобы вернуться к безопасному локальному запуску без загруженных моделей,
+установите `AI_MOCK_MODE=true`, `AI_PROVIDER=mock` и `STT_PROVIDER=mock`.
+
 В локальном режиме `STT_PROVIDER=mock` сохраняет запуск без скачивания Whisper.
 Файл аудио ограничен 25 MiB по умолчанию; допустимы WAV, MP3, WebM, OGG и M4A.
-Пустой файл или неверный формат дают 422/415, недоступный Whisper — 502.
+Пустой файл или неверный формат дают 422/415, недоступный Whisper — 502,
+превышение inference deadline самого Whisper — 504. В backend по умолчанию
+настроено 120 секунд на запрос к AI; отдельно можно задать
+`AI_REQUEST_TIMEOUT_MS` и `AI_STT_TIMEOUT_MS` (миллисекунды). Локальный Whisper
+читает `WHISPER_INFERENCE_TIMEOUT_SECONDS` (секунды, по умолчанию 120).
+
+## Голосовая сводка и сквозная проверка
+
+Backend отправляет как сводки чатов, так и текст голосовой расшифровки на
+`POST /summary` с контрактом:
+
+```json
+{
+  "messages": [{"sender_id": "voice", "text": "Текст расшифровки"}],
+  "language": "ru"
+}
+```
+
+Ответ содержит `summary`, `decisions`, `participants`, `language`, `provider`.
+`/secretary` оставлен для совместимости, но не используется для сводок. AI
+операции синхронные; интерфейс голосового сообщения сначала получает transcript,
+потом краткую сводку. Ошибки STT и summary отражаются раздельными статусами.
+
+Для отдельной живой проверки выполните запросы из
+[`ai-fullstack-validation.md`](ai-fullstack-validation.md). Mock-профиль
+работает без моделей; для реальных ответов нужны загруженная модель и запущенный
+LM Studio server, а для расшифровки — отдельный local Whisper adapter. Реальный
+результат нельзя подтвердить одними unit-тестами.
 
 ## Ограничения текущего этапа
 

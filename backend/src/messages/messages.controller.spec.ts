@@ -2,11 +2,25 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { MessagesController } from './messages.controller';
 import { MessagesService } from './messages.service';
 import { ChatsService } from '../chats/chats.service';
+import { BadRequestException } from '@nestjs/common';
 
 describe('MessagesController', () => {
   let controller: MessagesController;
+  let messagesService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
+    messagesService = {
+      getChatMessages: jest.fn(),
+      sendMessageWithTranslation: jest.fn(),
+      sendVoiceMessage: jest.fn(),
+      getVoiceFile: jest.fn(),
+      assist: jest.fn(),
+      translateText: jest.fn(),
+      summarizeMessages: jest.fn(),
+      transcribeAudio: jest.fn(),
+      editMessage: jest.fn(),
+      deleteMessage: jest.fn(),
+    };
     const module: TestingModule = await Test.createTestingModule({
       controllers: [MessagesController],
       providers: [

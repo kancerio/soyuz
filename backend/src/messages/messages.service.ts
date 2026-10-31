@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, BadGatewayException, GatewayTimeoutException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -8,7 +8,11 @@ import { randomUUID } from 'crypto';
 import { Message } from './message.entity';
 import { UsersService } from '../users/users.service';
 import { ChatsService } from '../chats/chats.service';
-import { TranslationService, AssistResult } from '../translation/translation.service';
+import {
+  TranslationService,
+  AssistResult,
+  SummaryMessageInput,
+} from '../translation/translation.service';
 
 const ALLOWED_VOICE_MIME_TYPES = [
   'audio/wav',
@@ -235,11 +239,53 @@ export class MessagesService {
   }
 
   async assist(
-  text: string,
-  action: 'shorten' | 'formal' | 'friendly',
-): Promise<AssistResult> {
-  return this.translationService.assist(text, action);
-}
+    text: string,
+    action: 'shorten' | 'formal' | 'friendly',
+  ): Promise<AssistResult> {
+    const result = await this.translationService.assist(text, action);
+    if (result.status === 'failed') {
+      throw new BadGatewayException('AI assistant is temporarily unavailable');
+    }
+    return result;
+  }
+
+  async translateText(text: string, sourceLang: string, targetLang: string) {
+    const result = await this.translationService.translate(text, sourceLang, targetLang);
+    if (result.status === 'failed') {
+      throw new BadGatewayException('AI translation is temporarily unavailable');
+    }
+    return result;
+  }
+
+  async summarizeMessages(messages: SummaryMessageInput[], language: string) {
+    const result = await this.translationService.summarizeMessages(messages, language);
+    if (result.status === 'failed') {
+      throw new BadGatewayException('AI summary is temporarily unavailable');
+    }
+    return result;
+  }
+
+  async transcribeAudio(file: Express.Multer.File, language: string = 'ru') {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Audio file is required and must not be empty');
+    }
+    const result = await this.translationService.transcribeAudio(
+      file.buffer,
+      file.originalname,
+      file.mimetype,
+      language,
+    );
+    if (result.status === 'failed') {
+      if (
+        result.providerStatus === 504 ||
+        /timed?\s*out|timeout/i.test(result.error ?? '')
+      ) {
+        throw new GatewayTimeoutException('Speech recognition timed out');
+      }
+      throw new BadGatewayException('Speech recognition is temporarily unavailable');
+    }
+    return result;
+  }
   async editMessage(messageId: number, userId: number, newContent: string): Promise<Message> {
     const message = await this.getMessage(messageId);
 
@@ -427,7 +473,7 @@ export class MessagesService {
           messageId,
           chatId,
           transcript: sttResult.transcript,
-          sttStatus: 'completed',
+          transcriptStatus: 'completed',
         });
 
         // 2. Генерация краткого резюме (Summary) без шаблонного STT summary
@@ -472,7 +518,7 @@ export class MessagesService {
           this.eventEmitter.emit('message.voice_summary', {
             messageId,
             chatId,
-            voiceSummary: '',
+            summary: '',
             summaryStatus: 'failed',
           });
         }
@@ -487,13 +533,13 @@ export class MessagesService {
           messageId,
           chatId,
           transcript: '',
-          sttStatus: 'failed',
+          transcriptStatus: 'failed',
         });
 
         this.eventEmitter.emit('message.voice_summary', {
           messageId,
           chatId,
-          voiceSummary: '',
+          summary: '',
           summaryStatus: 'failed',
         });
       }
@@ -508,13 +554,13 @@ export class MessagesService {
         messageId,
         chatId: chatId || 0,
         transcript: '',
-        sttStatus: 'failed',
+        transcriptStatus: 'failed',
       });
 
       this.eventEmitter.emit('message.voice_summary', {
         messageId,
         chatId: chatId || 0,
-        voiceSummary: '',
+        summary: '',
         summaryStatus: 'failed',
       });
     }
