@@ -96,3 +96,25 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## PostgreSQL integration checks
+
+The regular Jest suite uses mocks for fast unit tests. The file
+`src/database/postgres.integration.spec.ts` additionally checks the real
+PostgreSQL schema, inserts and reads rows, verifies unique email/username
+constraints, and exercises message updates and required columns.
+
+Run these checks against a disposable database whose name ends in `_test`:
+
+```powershell
+$env:DB_INTEGRATION_TESTS = 'true'
+$env:DB_HOST = 'localhost'
+$env:DB_PORT = '5432'
+$env:DB_USERNAME = 'messenger'
+$env:DB_PASSWORD = 'secretpassword'
+$env:DB_DATABASE = 'soyuz_test'
+npm.cmd test -- --runInBand postgres.integration.spec.ts
+```
+
+The test connection enables TypeORM `dropSchema`, so it erases and recreates
+the selected database schema. Use only a disposable test database. CI provisions
+a dedicated PostgreSQL 15 service and runs this suite separately.
