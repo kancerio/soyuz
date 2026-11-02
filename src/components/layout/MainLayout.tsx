@@ -32,6 +32,10 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     const handleOpenCreateChat = () => setIsCreateChatOpen(true);
     const handleOpenCreateGroup = () => setIsCreateGroupOpen(true);
 
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get('modal') === 'create-chat') setIsCreateChatOpen(true);
+    if (searchParams.get('modal') === 'create-group') setIsCreateGroupOpen(true);
+
     window.addEventListener('open-create-chat', handleOpenCreateChat);
     window.addEventListener('open-create-group', handleOpenCreateGroup);
 

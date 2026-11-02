@@ -14,6 +14,10 @@ export default function ProfileForm() {
 
   useEffect(() => {
     setFormData(user);
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get('edit') === '1') setIsEditing(true);
+    }
   }, [user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {

@@ -93,6 +93,15 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
   const targetLanguage = (user?.language || 'en').toLowerCase();
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get('panel') === 'ai') setShowAITools(true);
+      if (sp.get('panel') === 'summary') setShowSummaryPanel(true);
+      if (sp.get('sidebar') === 'details') setShowDetailsSidebar(true);
+    }
+  }, []);
+
+  useEffect(() => {
     const fetchChatInfo = async () => {
       try {
         const info = await apiClient.getChat(chatIdNum);
