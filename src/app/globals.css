@@ -1,3 +1,247 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ========================================
+   Дизайн-токены проекта «Союз»
+   ======================================== */
+
+@layer base {
+  /* ---------- Светлая тема ---------- */
+  :root {
+    --color-bg:              #f0f4ff;
+    --color-surface:         #ffffff;
+    --color-surface-hover:   #f5f8ff;
+    --color-surface-active:  #e8efff;
+    --color-elevated:        #ffffff;
+    --color-input:           #ffffff;
+    --color-nav:             #ffffff;
+    --color-text:            #1a2038;
+    --color-text-secondary:  #6070a0;
+    --color-text-muted:      #9babc6;
+    --color-border:          #dde4f0;
+    --color-border-strong:   #c7d4f0;
+    --color-accent:          #3b82f6;
+    --color-accent-hover:    #2563eb;
+    --color-accent-light:    #dbeafe;
+    --color-bubble-own:      #3b82f6;
+    --color-bubble-own-text: #ffffff;
+    --color-bubble-other:    #ffffff;
+    --color-bubble-other-text: #1a2038;
+    --color-success:         #22c55e;
+    --color-error:           #ef4444;
+    --color-warning:         #f59e0b;
+    --color-badge:           #ef4444;
+    --shadow-card:           0 2px 8px rgba(0, 0, 0, 0.06);
+    --shadow-modal:          0 8px 32px rgba(0, 0, 0, 0.12);
+    --shadow-bubble:         0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+
+  /* ---------- Тёмная тема ---------- */
+  .dark {
+    --color-bg:              #0b1026;
+    --color-surface:         #111640;
+    --color-surface-hover:   #151b4a;
+    --color-surface-active:  #192050;
+    --color-elevated:        #1a2248;
+    --color-input:           #0f1535;
+    --color-nav:             #0d1230;
+    --color-text:            #e8ecf4;
+    --color-text-secondary:  #7b8db5;
+    --color-text-muted:      #5a6a8a;
+    --color-border:          #1e2955;
+    --color-border-strong:   #2a3668;
+    --color-accent:          #3b82f6;
+    --color-accent-hover:    #60a5fa;
+    --color-accent-light:    #1e3a5f;
+    --color-bubble-own:      #2563eb;
+    --color-bubble-own-text: #ffffff;
+    --color-bubble-other:    #1a2248;
+    --color-bubble-other-text: #e8ecf4;
+    --color-success:         #22c55e;
+    --color-error:           #ef4444;
+    --color-warning:         #f59e0b;
+    --color-badge:           #ef4444;
+    --shadow-card:           0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-modal:          0 8px 32px rgba(0, 0, 0, 0.5);
+    --shadow-bubble:         0 1px 3px rgba(0, 0, 0, 0.25);
+  }
+
+  /* ---------- Глобальные стили ---------- */
+  html {
+    @apply antialiased;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-text-muted);
+  }
+
+  /* Стилизация selection */
+  ::selection {
+    background-color: var(--color-accent);
+    color: #ffffff;
+  }
+
+  /* Focus-visible для accessibility */
+  *:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* ========================================
+   Утилитарные классы проекта
+   ======================================== */
+
+@layer components {
+  /* Поверхности */
+  .soyuz-bg           { background-color: var(--color-bg); }
+  .soyuz-surface      { background-color: var(--color-surface); }
+  .soyuz-surface-hover { background-color: var(--color-surface-hover); }
+  .soyuz-surface-active{ background-color: var(--color-surface-active); }
+  .soyuz-elevated     { background-color: var(--color-elevated); }
+  .soyuz-input        { background-color: var(--color-input); }
+  .soyuz-nav          { background-color: var(--color-nav); }
+
+  /* Текст */
+  .soyuz-text         { color: var(--color-text); }
+  .soyuz-text-secondary { color: var(--color-text-secondary); }
+  .soyuz-text-muted   { color: var(--color-text-muted); }
+
+  /* Границы */
+  .soyuz-border       { border-color: var(--color-border); }
+  .soyuz-border-strong{ border-color: var(--color-border-strong); }
+
+  /* Accent */
+  .soyuz-accent       { background-color: var(--color-accent); }
+  .soyuz-accent-text  { color: var(--color-accent); }
+
+  /* Пузыри сообщений */
+  .bubble-own {
+    background-color: var(--color-bubble-own);
+    color: var(--color-bubble-own-text);
+    box-shadow: var(--shadow-bubble);
+  }
+  .bubble-other {
+    background-color: var(--color-bubble-other);
+    color: var(--color-bubble-other-text);
+    box-shadow: var(--shadow-bubble);
+  }
+
+  /* Карточки */
+  .soyuz-card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Кнопки */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 font-medium rounded-xl
+           transition-all duration-200 focus-visible:outline-none
+           focus-visible:ring-2 focus-visible:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed select-none;
+    --tw-ring-color: var(--color-accent);
+  }
+  .btn-primary {
+    @apply btn px-5 py-2.5 text-sm text-white;
+    background-color: var(--color-accent);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--color-accent-hover);
+  }
+  .btn-secondary {
+    @apply btn px-5 py-2.5 text-sm;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--color-surface-hover);
+    border-color: var(--color-border-strong);
+  }
+  .btn-ghost {
+    @apply btn px-3 py-2 text-sm;
+    color: var(--color-text-secondary);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background-color: var(--color-surface-hover);
+    color: var(--color-text);
+  }
+  .btn-danger {
+    @apply btn px-5 py-2.5 text-sm text-white bg-red-500;
+  }
+  .btn-danger:hover:not(:disabled) {
+    @apply bg-red-600;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs rounded-lg;
+  }
+  .btn-lg {
+    @apply px-6 py-3 text-base rounded-xl;
+  }
+  .btn-icon {
+    @apply btn p-2.5 rounded-xl;
+    color: var(--color-text-secondary);
+  }
+  .btn-icon:hover:not(:disabled) {
+    background-color: var(--color-surface-hover);
+    color: var(--color-text);
+  }
+
+  /* Инпуты */
+  .input {
+    @apply w-full px-4 py-2.5 text-sm rounded-xl border transition-colors duration-200
+           placeholder:text-gray-400 focus:outline-none focus:ring-2;
+    background-color: var(--color-input);
+    border-color: var(--color-border);
+    color: var(--color-text);
+    --tw-ring-color: var(--color-accent);
+  }
+  .input:focus {
+    border-color: var(--color-accent);
+  }
+
+  /* Toggle (switch) */
+  .toggle {
+    @apply relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200
+           cursor-pointer;
+    background-color: var(--color-border-strong);
+  }
+  .toggle[data-checked="true"] {
+    background-color: var(--color-accent);
+  }
+  .toggle-dot {
+    @apply inline-block h-4 w-4 rounded-full bg-white transition-transform duration-200 transform;
+    translate: 2px;
+  }
+  .toggle[data-checked="true"] .toggle-dot {
+    translate: 22px;
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center justify-center min-w-[18px] h-[18px] px-1
+           text-[10px] font-bold text-white rounded-full;
+    background-color: var(--color-badge);
+  }
+}

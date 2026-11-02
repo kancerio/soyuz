@@ -138,8 +138,6 @@ export default function VoiceComposer({
           return;
         }
 
-        // Для MediaRecorder НЕ вызываем getAudioDuration — webm часто зависает.
-        // Длительность берём только с таймера.
         if (recordedMs > MAX_DURATION_MS) {
           setError('Максимальная длительность — 3 минуты');
           setPhase('error');
@@ -284,27 +282,33 @@ export default function VoiceComposer({
 
   if (phase === 'idle') {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 bg-gray-50 dark:bg-[#0f1535] p-1.5 rounded-2xl border border-[#dde4f0] dark:border-[#1e2955]">
         <button
           type="button"
           disabled={disabled}
           onClick={startRecording}
-          className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
-          title="Записать голосовое"
-          aria-label="Записать голосовое"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium shadow-sm transition-all"
+          title="Записать голос"
         >
-          🎤
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+          </svg>
+          <span>Записать</span>
         </button>
+
         <button
           type="button"
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
-          title="Загрузить аудио"
-          aria-label="Загрузить аудио"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#1a2248] transition-colors"
+          title="Выбрать аудиофайл"
         >
-          📎
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+          </svg>
+          <span>Файл</span>
         </button>
+
         <input
           ref={fileInputRef}
           type="file"
@@ -312,12 +316,18 @@ export default function VoiceComposer({
           className="hidden"
           onChange={handleFileSelect}
         />
+
+        <div className="flex-1" />
+
         <button
           type="button"
           onClick={onCancel}
-          className="text-sm text-gray-500 hover:text-red-500 ml-1"
+          className="p-1.5 rounded-xl text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors"
+          title="Отмена"
         >
-          Отмена
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
         </button>
       </div>
     );
@@ -325,9 +335,9 @@ export default function VoiceComposer({
 
   if (phase === 'requesting_permission') {
     return (
-      <div className="flex items-center gap-2 text-sm text-gray-500 px-2">
+      <div className="flex items-center justify-between p-2.5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 text-xs text-blue-600 dark:text-blue-300">
         <span className="animate-pulse">Запрос доступа к микрофону…</span>
-        <button type="button" onClick={cancelRecording} className="text-red-500 text-sm">
+        <button type="button" onClick={cancelRecording} className="text-red-500 font-medium hover:underline">
           Отмена
         </button>
       </div>
@@ -336,57 +346,71 @@ export default function VoiceComposer({
 
   if (phase === 'recording') {
     return (
-      <div className="flex items-center gap-3 px-2 py-1 bg-red-50 dark:bg-red-900/20 rounded-lg">
-        <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
-        <span className="font-mono text-sm tabular-nums">{formatDuration(elapsedMs)}</span>
-        <span className="text-xs text-gray-500">/ 3:00</span>
-        <button
-          type="button"
-          onClick={stopRecording}
-          className="px-3 py-1 text-sm bg-red-500 text-white rounded-full hover:bg-red-600"
-        >
-          Стоп
-        </button>
-        <button
-          type="button"
-          onClick={cancelRecording}
-          className="text-sm text-gray-500 hover:text-red-500"
-        >
-          Отмена
-        </button>
+      <div className="flex items-center justify-between gap-3 p-2.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-2xl">
+        <div className="flex items-center gap-2.5">
+          <span className="w-3 h-3 rounded-full bg-red-500 animate-ping" />
+          <span className="font-mono text-sm font-semibold text-red-600 dark:text-red-400 tabular-nums">
+            {formatDuration(elapsedMs)}
+          </span>
+          <span className="text-xs text-gray-400">/ 3:00</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={stopRecording}
+            className="px-3.5 py-1.5 text-xs font-semibold bg-red-500 text-white rounded-xl hover:bg-red-600 shadow-sm transition-all"
+          >
+            Готово
+          </button>
+          <button
+            type="button"
+            onClick={cancelRecording}
+            className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+            title="Отменить запись"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
       </div>
     );
   }
 
   if (phase === 'preview' && draft) {
     return (
-      <div className="flex flex-col gap-2 px-2 py-2 bg-gray-50 dark:bg-gray-800 rounded-lg w-full max-w-md">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">
-            {draft.source === 'record' ? 'Запись' : draft.fileName || 'Файл'}
+      <div className="flex flex-col gap-2.5 p-3 bg-white dark:bg-[#111640] border border-[#dde4f0] dark:border-[#1e2955] rounded-2xl shadow-md w-full">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-medium text-[#1a2038] dark:text-white truncate max-w-[200px]">
+            {draft.source === 'record' ? 'Голосовая запись' : draft.fileName || 'Аудиофайл'}
           </span>
-          <span className="font-mono text-sm">{formatDuration(draft.durationMs)}</span>
+          <span className="font-mono text-[#6070a0] dark:text-[#7b8db5]">
+            {formatDuration(draft.durationMs)}
+          </span>
         </div>
+
         <audio src={draft.localUrl} controls className="w-full h-8" preload="metadata" />
-        <div className="flex gap-2">
+
+        <div className="flex items-center gap-2 pt-1">
           <button
             type="button"
             onClick={confirmSend}
-            className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="flex-1 py-2 px-3 text-xs font-medium bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-sm transition-all"
           >
             Отправить
           </button>
           <button
             type="button"
             onClick={discardPreview}
-            className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="py-2 px-3 text-xs font-medium border border-[#dde4f0] dark:border-[#1e2955] rounded-xl hover:bg-gray-100 dark:hover:bg-[#1a2248] transition-colors"
           >
             Заново
           </button>
           <button
             type="button"
             onClick={cancelRecording}
-            className="px-3 py-1.5 text-sm text-gray-500 hover:text-red-500"
+            className="py-2 px-3 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition-colors"
           >
             Отмена
           </button>
@@ -397,21 +421,23 @@ export default function VoiceComposer({
 
   // error
   return (
-    <div className="flex items-center gap-2 px-2 py-1 text-sm">
-      <span className="text-red-500">{error || 'Ошибка'}</span>
-      <button
-        type="button"
-        onClick={() => {
-          setError(null);
-          setPhase('idle');
-        }}
-        className="text-blue-600 hover:underline"
-      >
-        Попробовать снова
-      </button>
-      <button type="button" onClick={cancelRecording} className="text-gray-500">
-        Закрыть
-      </button>
+    <div className="flex items-center justify-between p-2.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-2xl text-xs">
+      <span className="text-red-500 truncate mr-2">{error || 'Ошибка записи'}</span>
+      <div className="flex items-center gap-2 shrink-0">
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            setPhase('idle');
+          }}
+          className="text-blue-600 dark:text-blue-400 font-medium hover:underline"
+        >
+          Повторить
+        </button>
+        <button type="button" onClick={cancelRecording} className="text-gray-400 hover:text-gray-600">
+          ✕
+        </button>
+      </div>
     </div>
   );
 }

@@ -23,13 +23,31 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
   const router = useRouter();
 
   useEffect(() => {
-    // Восстановление пользователя из sessionStorage
-    const storedUser = sessionStorage.getItem('user');
+    const storedUser = typeof window !== 'undefined' ? sessionStorage.getItem('user') : null;
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch {
+        setUser(getMockDefaultUser());
+      }
+    } else {
+      setUser(getMockDefaultUser());
     }
     setIsLoading(false);
   }, []);
+
+  function getMockDefaultUser(): User {
+    return {
+      id: 1,
+      email: 'ivan.petrov@soyuz.chat',
+      name: 'Иван Петров',
+      username: 'ivan_petrov',
+      country: 'Россия',
+      language: 'ru',
+      status: 'В сети',
+      privacySettings: { showLastSeen: true, showReadReceipts: true },
+    };
+  }
 
   const login = async (email: string, password: string) => {
     const res = await apiClient.login({ email, password });

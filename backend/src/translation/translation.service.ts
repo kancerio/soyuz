@@ -361,24 +361,25 @@ export class TranslationService {
       try {
         let response;
         try {
-          // Согласованный контракт: POST /summary { text }
+          // Согласованный контракт: POST /summary
           response = await firstValueFrom(
             this.httpService.post(
               `${this.aiBaseUrl}/summary`,
               {
-                messages: [{ sender_id: 'user', text: trimmed }],
-                language: 'ru',
+                messages,
+                language: language || 'ru',
               },
               { timeout: this.timeoutMs },
             ),
           );
         } catch (postErr) {
           if (postErr.response?.status === 404 || postErr.response?.status === 422) {
-            // Фолбэк на /secretary для плавного перехода, пока сервис обновляется
+            // Фолбэк на /secretary
+            const combinedText = messages.map((m) => m.text).join('\n');
             response = await firstValueFrom(
               this.httpService.post(
                 `${this.aiBaseUrl}/secretary`,
-                { action: 'summary', details: trimmed },
+                { action: 'summary', details: combinedText },
                 { timeout: this.timeoutMs },
               ),
             );
@@ -387,10 +388,11 @@ export class TranslationService {
           }
         }
 
+        const data = response.data || {};
         const summary =
-          response.data.summary ||
-          response.data.result ||
-          response.data.message ||
+          data.summary ||
+          data.result ||
+          data.message ||
           '';
 
         return {

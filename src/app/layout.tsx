@@ -3,8 +3,8 @@ import './globals.css';
 import { Providers } from './providers';
 
 export const metadata: Metadata = {
-  title: 'Soyuz Messenger',
-  description: 'Secure messenger with AI features',
+  title: 'Союз | Мессенджер с ИИ',
+  description: 'Безопасный мессенджер с встроенными функциями искусственного интеллекта и перевода',
 };
 
 export default function RootLayout({
@@ -13,8 +13,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ru">
-      <body className="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    <html lang="ru" suppressHydrationWarning>
+      <body className="min-h-screen bg-[#f0f4ff] dark:bg-[#0b1026] text-[#1a2038] dark:text-[#e8ecf4] font-sans antialiased selection:bg-blue-600 selection:text-white transition-colors duration-200">
         <Providers>{children}</Providers>
       </body>
     </html>
