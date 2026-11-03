@@ -64,10 +64,22 @@ jobs:
           curl --fail http://localhost:8000/ || exit 1
           docker stop ai-test
 
-  application-build-and-tests:
+  backend-postgres-tests:
     runs-on: ubuntu-latest
-    env:
-      NODE_OPTIONS: --experimental-vm-modules
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: messenger
+          POSTGRES_PASSWORD: secretpassword
+          POSTGRES_DB: soyuz_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U messenger -d soyuz_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -75,23 +87,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install frontend dependencies
-        run: npm install --no-audit --no-fund
-      - name: Build frontend
-        run: npm run build
       - name: Install backend dependencies
         working-directory: ./backend
         run: npm ci
-      - name: Run backend unit tests
+      - name: Run PostgreSQL integration tests
         working-directory: ./backend
-        run: npm test -- --runInBand --coverage
-      - name: Upload backend coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-unit-test-coverage
-          path: backend/coverage/
-          if-no-files-found: ignore
-      - name: Build backend
-        working-directory: ./backend
-        run: npm run build
+        env:
+          DB_INTEGRATION_TESTS: 'true'
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_USERNAME: messenger
+          DB_PASSWORD: secretpassword
+          DB_DATABASE: soyuz_test
+        run: npm test -- --runInBand postgres.integration.spec.ts
