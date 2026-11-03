@@ -7,7 +7,7 @@ on:
   push:
     branches: ["**"]
   pull_request:
-    branches: ["main", "develop"]
+    branches: ["main", "develop", "test2"]
 
 jobs:
   test-and-lint:
@@ -63,3 +63,40 @@ jobs:
           sleep 10
           curl --fail http://localhost:8000/ || exit 1
           docker stop ai-test
+
+  backend-postgres-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: messenger
+          POSTGRES_PASSWORD: secretpassword
+          POSTGRES_DB: soyuz_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U messenger -d soyuz_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci
+      - name: Run PostgreSQL integration tests
+        working-directory: ./backend
+        env:
+          DB_INTEGRATION_TESTS: 'true'
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_USERNAME: messenger
+          DB_PASSWORD: secretpassword
+          DB_DATABASE: soyuz_test
+        run: npm test -- --runInBand postgres.integration.spec.ts

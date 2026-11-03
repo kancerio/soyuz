@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, BadGatewayException, GatewayTimeoutException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -8,7 +8,11 @@ import { randomUUID } from 'crypto';
 import { Message } from './message.entity';
 import { UsersService } from '../users/users.service';
 import { ChatsService } from '../chats/chats.service';
-import { TranslationService, AssistResult } from '../translation/translation.service';
+import {
+  TranslationService,
+  AssistResult,
+  SummaryMessageInput,
+} from '../translation/translation.service';
 
 const ALLOWED_VOICE_MIME_TYPES = [
   'audio/wav',
@@ -108,14 +112,26 @@ export class MessagesService {
     private eventEmitter: EventEmitter2,
   ) {}
 
-  async getChatMessages(chatId: number, limit: number = 50, offset: number = 0): Promise<Message[]> {
-    return this.messagesRepository.find({
+  async getChatMessages(
+    chatId: number,
+    userId: number,
+    limit: number = 50,
+    offset: number = 0,
+  ): Promise<Message[]> {
+    const isParticipant = await this.chatsService.isParticipant(chatId, userId);
+    if (!isParticipant) {
+      throw new ForbiddenException('Вы не являетесь участником этого чата');
+    }
+
+    const messages = await this.messagesRepository.find({
       where: { chatId },
       order: { createdAt: 'ASC' },
       skip: offset,
       take: limit,
       relations: ['user'],
     });
+
+    return messages.map((m) => this.enrichMessageWithVoiceUrl(m));
   }
 
   async sendMessage(
@@ -223,11 +239,53 @@ export class MessagesService {
   }
 
   async assist(
-  text: string,
-  action: 'shorten' | 'formal' | 'friendly',
-): Promise<AssistResult> {
-  return this.translationService.assist(text, action);
-}
+    text: string,
+    action: 'shorten' | 'formal' | 'friendly',
+  ): Promise<AssistResult> {
+    const result = await this.translationService.assist(text, action);
+    if (result.status === 'failed') {
+      throw new BadGatewayException('AI assistant is temporarily unavailable');
+    }
+    return result;
+  }
+
+  async translateText(text: string, sourceLang: string, targetLang: string) {
+    const result = await this.translationService.translate(text, sourceLang, targetLang);
+    if (result.status === 'failed') {
+      throw new BadGatewayException('AI translation is temporarily unavailable');
+    }
+    return result;
+  }
+
+  async summarizeMessages(messages: SummaryMessageInput[], language: string) {
+    const result = await this.translationService.summarizeMessages(messages, language);
+    if (result.status === 'failed') {
+      throw new BadGatewayException('AI summary is temporarily unavailable');
+    }
+    return result;
+  }
+
+  async transcribeAudio(file: Express.Multer.File, language: string = 'ru') {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Audio file is required and must not be empty');
+    }
+    const result = await this.translationService.transcribeAudio(
+      file.buffer,
+      file.originalname,
+      file.mimetype,
+      language,
+    );
+    if (result.status === 'failed') {
+      if (
+        result.providerStatus === 504 ||
+        /timed?\s*out|timeout/i.test(result.error ?? '')
+      ) {
+        throw new GatewayTimeoutException('Speech recognition timed out');
+      }
+      throw new BadGatewayException('Speech recognition is temporarily unavailable');
+    }
+    return result;
+  }
   async editMessage(messageId: number, userId: number, newContent: string): Promise<Message> {
     const message = await this.getMessage(messageId);
 
@@ -251,7 +309,7 @@ export class MessagesService {
       throw new NotFoundException('Сообщение не найдено');
     }
 
-    return message;
+    return this.enrichMessageWithVoiceUrl(message);
   }
 
   async deleteMessage(messageId: number, userId: number, userRole?: string): Promise<{ deleted: boolean }> {
@@ -294,6 +352,15 @@ export class MessagesService {
       },
       relations: ['user'],
     });
+  }
+
+  enrichMessageWithVoiceUrl(message: Message): Message & { voiceUrl?: string | null } {
+    if (message.voiceFileId) {
+      (message as any).voiceUrl = `/messages/voice/${message.voiceFileId}`;
+    } else {
+      (message as any).voiceUrl = null;
+    }
+    return message as any;
   }
 
   // ========== ГОЛОСОВЫЕ СООБЩЕНИЯ (ЗАДАЧА 2) ==========
@@ -406,41 +473,43 @@ export class MessagesService {
           messageId,
           chatId,
           transcript: sttResult.transcript,
-          sttStatus: 'completed',
+          transcriptStatus: 'completed',
         });
 
-        // 2. Генерация краткого резюме (Summary)
+        // 2. Генерация краткого резюме (Summary) без шаблонного STT summary
         try {
-          let summaryText = sttResult.summary;
-          if (!summaryText) {
-            const sumResult = await this.translationService.generateSummary(sttResult.transcript);
-            if (sumResult.status === 'completed') {
-              summaryText = sumResult.summary;
-            }
-          }
+          const cleanTranscript = sttResult.transcript.trim();
 
-          if (summaryText) {
+          // Правило пропуска краткого содержания для коротких сообщений (< 50 символов)
+          if (cleanTranscript.length < 50) {
             await this.messagesRepository.update(messageId, {
-              voiceSummary: summaryText,
-              summaryStatus: 'completed',
+              voiceSummary: null,
+              summaryStatus: 'skipped',
             });
 
             this.eventEmitter.emit('message.voice_summary', {
               messageId,
               chatId,
-              voiceSummary: summaryText,
-              summaryStatus: 'completed',
+              voiceSummary: null,
+              summaryStatus: 'skipped',
             });
           } else {
+            // Вызываем реальный AI API generateSummary
+            const sumResult = await this.translationService.generateSummary(cleanTranscript);
+            const isCompleted = sumResult.status === 'completed';
+            const finalSummary = isCompleted ? sumResult.summary : null;
+            const finalStatus = isCompleted ? 'completed' : 'failed';
+
             await this.messagesRepository.update(messageId, {
-              summaryStatus: 'failed',
+              voiceSummary: finalSummary,
+              summaryStatus: finalStatus,
             });
 
             this.eventEmitter.emit('message.voice_summary', {
               messageId,
               chatId,
-              voiceSummary: '',
-              summaryStatus: 'failed',
+              voiceSummary: finalSummary,
+              summaryStatus: finalStatus,
             });
           }
         } catch (sumErr) {
@@ -449,7 +518,7 @@ export class MessagesService {
           this.eventEmitter.emit('message.voice_summary', {
             messageId,
             chatId,
-            voiceSummary: '',
+            summary: '',
             summaryStatus: 'failed',
           });
         }
@@ -464,13 +533,13 @@ export class MessagesService {
           messageId,
           chatId,
           transcript: '',
-          sttStatus: 'failed',
+          transcriptStatus: 'failed',
         });
 
         this.eventEmitter.emit('message.voice_summary', {
           messageId,
           chatId,
-          voiceSummary: '',
+          summary: '',
           summaryStatus: 'failed',
         });
       }
@@ -485,13 +554,13 @@ export class MessagesService {
         messageId,
         chatId: chatId || 0,
         transcript: '',
-        sttStatus: 'failed',
+        transcriptStatus: 'failed',
       });
 
       this.eventEmitter.emit('message.voice_summary', {
         messageId,
         chatId: chatId || 0,
-        voiceSummary: '',
+        summary: '',
         summaryStatus: 'failed',
       });
     }
@@ -536,4 +605,66 @@ export class MessagesService {
       mimeType: message.voiceMimeType || 'audio/webm',
     };
   }
+  /**
+   * Защищённый метод краткой сводки переписки чата с ограничением числа сообщений (Задача 5)
+   */
+  async getChatSummary(
+    chatId: number,
+    userId: number,
+    limit: number = 20,
+  ): Promise<{ chatId: number; summary: string; messagesCount: number; status: string }> {
+    const isParticipant = await this.chatsService.isParticipant(chatId, userId);
+    if (!isParticipant) {
+      throw new ForbiddenException('Вы не являетесь участником этого чата');
+    }
+
+    const maxMessages = Math.min(Math.max(limit || 20, 1), 50);
+
+    const rawMessages = await this.messagesRepository.find({
+      where: { chatId, isDeleted: false },
+      order: { createdAt: 'DESC' },
+      take: maxMessages,
+      relations: ['user'],
+    });
+
+    const messages = rawMessages.reverse();
+    const lines: string[] = [];
+
+    for (const msg of messages) {
+      const author = msg.user?.username || `User_${msg.userId}`;
+      const text = msg.transcript || msg.content;
+      if (text && text.trim() && text !== '[Голосовое сообщение]' && text !== '[Сообщение удалено]') {
+        lines.push(`${author}: ${text.trim()}`);
+      }
+    }
+
+    if (lines.length === 0) {
+      return {
+        chatId,
+        summary: 'В переписке нет сообщений для составления сводки',
+        messagesCount: 0,
+        status: 'skipped',
+      };
+    }
+
+    const conversationText = lines.join('\n');
+    if (conversationText.length < 50) {
+      return {
+        chatId,
+        summary: 'Переписка слишком короткая для краткой сводки',
+        messagesCount: lines.length,
+        status: 'skipped',
+      };
+    }
+
+    const result = await this.translationService.generateSummary(conversationText);
+
+    return {
+      chatId,
+      summary: result?.summary || '',
+      messagesCount: lines.length,
+      status: result?.status || 'failed',
+    };
+  }
+
 }

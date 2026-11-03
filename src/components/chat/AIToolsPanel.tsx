@@ -2,7 +2,8 @@
 
 import { ChangeEvent, useRef, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
-import { aiClient, SummaryResponse } from '@/lib/aiClient';
+import { aiClient } from '@/lib/aiClient';
+import { apiClient } from '@/lib/apiClient';
 import { Message } from '@/types/chat';
 
 type AssistAction = 'shorten' | 'formal' | 'friendly';
@@ -50,14 +51,14 @@ export default function AIToolsPanel({ messages, onTranscript }: AIToolsPanelPro
   const handleTranslate = () => {
     if (!latestMessage) return;
     void run('translate', async () => {
-      const response = await aiClient.translate({
-        text: latestMessage.content,
-        source_lang: sourceLanguage,
-        target_lang: targetLanguage,
-      });
+      const response = await apiClient.translateText(
+        latestMessage.content,
+        sourceLanguage,
+        targetLanguage,
+      );
       return {
         title: `${t('translate')} (${targetLanguage})`,
-        body: response.result,
+        body: response.translatedText,
       };
     });
   };
@@ -65,13 +66,10 @@ export default function AIToolsPanel({ messages, onTranscript }: AIToolsPanelPro
   const handleAssist = () => {
     if (!latestMessage) return;
     void run('assist', async () => {
-      const response = await aiClient.assist({
-        text: latestMessage.content,
-        action: assistAction,
-      });
+      const response = await apiClient.assistText(latestMessage.content, assistAction);
       return {
         title: t(`assist_${assistAction}`),
-        body: response.result,
+        body: response.resultText,
       };
     });
   };
@@ -79,14 +77,14 @@ export default function AIToolsPanel({ messages, onTranscript }: AIToolsPanelPro
   const handleSummary = () => {
     if (!usableMessages.length) return;
     void run('summary', async () => {
-      const response: SummaryResponse = await aiClient.summarize({
+      const response = await apiClient.summarizeMessages(
         language,
-        messages: usableMessages.map((message) => ({
+        usableMessages.map((message) => ({
           sender_id: String(message.senderId),
           text: message.content,
           timestamp: message.timestamp.toISOString(),
         })),
-      });
+      );
       return {
         title: t('summary'),
         body: response.summary,
@@ -105,7 +103,7 @@ export default function AIToolsPanel({ messages, onTranscript }: AIToolsPanelPro
     event.target.value = '';
     if (!file) return;
     await run('stt', async () => {
-      const response = await aiClient.transcribe(file, language);
+      const response = await apiClient.transcribeAudio(file, language);
       onTranscript(response.transcript);
       return { title: t('ai_voice'), body: response.transcript };
     });

@@ -4,7 +4,7 @@ import { Chat } from '../chats/chat.entity';
 
 export type TranslateStatus = 'pending' | 'completed' | 'failed' | 'skipped' | 'none';
 export type SttStatus = 'pending' | 'completed' | 'failed' | 'none';
-export type SummaryStatus = 'pending' | 'completed' | 'failed' | 'none';
+export type SummaryStatus = 'pending' | 'completed' | 'failed' | 'skipped' | 'none';
 
 @Entity('messages')
 export class Message {

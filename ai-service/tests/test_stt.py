@@ -2,10 +2,10 @@ import pytest
 from fastapi.testclient import TestClient
 import src.main as main
 
-from src.llm_provider import LLMProviderError
-
+from src.llm_provider import LLMProviderError, SpeechProviderTimeout
 
 client = TestClient(main.app)
+
 
 def test_stt_mock():
     # Отправляем пустой файл, но заглушка всё равно вернёт фиктивный ответ
@@ -81,3 +81,21 @@ def test_stt_reports_provider_failure(monkeypatch):
 
     assert response.status_code == 502
     assert response.json()["detail"] == "Whisper provider is offline"
+
+
+def test_stt_reports_provider_timeout_as_gateway_timeout(monkeypatch):
+    class TimeoutClient:
+        async def transcribe(self, **_kwargs):
+            raise SpeechProviderTimeout("Speech provider timed out")
+
+    monkeypatch.setenv("STT_PROVIDER", "openai_compatible")
+    monkeypatch.setattr(main, "get_stt_client", lambda: TimeoutClient())
+
+    response = client.post(
+        "/stt",
+        files={"audio": ("voice.wav", b"audio", "audio/wav")},
+        data={"language": "ru"},
+    )
+
+    assert response.status_code == 504
+    assert response.json()["detail"] == "Speech provider timed out"

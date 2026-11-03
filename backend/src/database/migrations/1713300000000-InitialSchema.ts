@@ -55,6 +55,20 @@ export class InitialSchema1713300000000 implements MigrationInterface {
       );
     `);
 
+    // Older databases were created from TypeORM entity metadata before this migration existed.
+    // Those schemas use camelCase relation columns, while Message maps them to snake_case.
+    if (!(await queryRunner.hasColumn('messages', 'chat_id')) && (await queryRunner.hasColumn('messages', 'chatId'))) {
+      await queryRunner.renameColumn('messages', 'chatId', 'chat_id');
+    }
+    if (!(await queryRunner.hasColumn('messages', 'user_id')) && (await queryRunner.hasColumn('messages', 'userId'))) {
+      await queryRunner.renameColumn('messages', 'userId', 'user_id');
+    }
+
+    // Existing tables created from older entity metadata may lack delivery-state columns.
+    await queryRunner.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS "isDelivered" BOOLEAN DEFAULT FALSE;`);
+    await queryRunner.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS "isRead" BOOLEAN DEFAULT FALSE;`);
+    await queryRunner.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS "readAt" TIMESTAMP;`);
+
     // Индексы
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id);`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);`);

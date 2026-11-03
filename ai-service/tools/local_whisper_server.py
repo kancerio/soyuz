@@ -7,14 +7,15 @@ transcriptions on ``/v1/audio/transcriptions``.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from starlette.concurrency import run_in_threadpool
 import uvicorn
-
 
 MODEL_NAME = os.getenv("WHISPER_MODEL", "Systran/faster-whisper-base")
 DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
@@ -24,6 +25,9 @@ COMPUTE_TYPE = os.getenv(
 )
 HOST = os.getenv("WHISPER_HOST", "0.0.0.0")
 PORT = int(os.getenv("WHISPER_PORT", "9000"))
+WHISPER_INFERENCE_TIMEOUT_SECONDS = float(
+    os.getenv("WHISPER_INFERENCE_TIMEOUT_SECONDS", "120")
+)
 
 app = FastAPI(title="Soyuz local Whisper adapter")
 _model: Any | None = None
@@ -71,19 +75,34 @@ async def transcribe(
             temporary.write(audio)
             temporary_path = temporary.name
 
-        segments, info = get_model().transcribe(
-            temporary_path,
-            language=language or None,
-            vad_filter=True,
+        segments, info = await asyncio.wait_for(
+            run_in_threadpool(
+                get_model().transcribe,
+                temporary_path,
+                language=language or None,
+                vad_filter=True,
+            ),
+            timeout=WHISPER_INFERENCE_TIMEOUT_SECONDS,
         )
-        text = " ".join(segment.text.strip() for segment in segments if segment.text.strip())
+        text = " ".join(
+            segment.text.strip() for segment in segments if segment.text.strip()
+        )
         if not text:
-            raise HTTPException(status_code=422, detail="Whisper returned an empty transcript")
+            raise HTTPException(
+                status_code=422, detail="Whisper returned an empty transcript"
+            )
         return {"text": text, "language": getattr(info, "language", language or "")}
     except HTTPException:
         raise
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="Whisper transcription timed out",
+        ) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail="Whisper transcription failed") from exc
+        raise HTTPException(
+            status_code=502, detail="Whisper transcription failed"
+        ) from exc
     finally:
         if temporary_path:
             try:

@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, BadRequestException, BadGatewayException, GatewayTimeoutException } from '@nestjs/common';
 
 jest.mock('@nestjs/event-emitter', () => {
   class MockEventEmitter2 {
@@ -67,8 +67,23 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
         status: 'completed',
         mock: false,
       }),
+      assist: jest.fn().mockResolvedValue({
+        originalText: 'Черновик',
+        resultText: 'Улучшенный текст',
+        action: 'friendly',
+        status: 'completed',
+        mock: false,
+      }),
+      summarizeMessages: jest.fn().mockResolvedValue({
+        summary: 'Итог',
+        decisions: [],
+        participants: ['1'],
+        language: 'ru',
+        provider: 'lmstudio',
+        status: 'completed',
+      }),
       transcribeAudio: jest.fn().mockResolvedValue({
-        transcript: 'Распознанный голос',
+        transcript: 'Распознанный голос достаточной длины для проверки формирования выжимки голосового',
         summary: 'Краткое резюме',
         language: 'ru',
         status: 'completed',
@@ -151,6 +166,45 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
         id: 101,
       }),
     );
+  });
+
+    describe('История сообщений и права доступа (Проверка участника чата)', () => {
+    it('должен возвращать историю сообщений, если пользователь участник чата', async () => {
+      mockMessagesRepository.find.mockResolvedValueOnce([
+        { id: 1, content: 'Привет', chatId: 1 },
+      ]);
+
+      const messages = await service.getChatMessages(1, 10, 50, 0);
+
+      expect(mockChatsService.isParticipant).toHaveBeenCalledWith(1, 10);
+      expect(messages).toHaveLength(1);
+    });
+
+    it('должен блокировать получение истории сообщений с ошибкой 403 Forbidden, если пользователь не участник чата', async () => {
+      await expect(
+        service.getChatMessages(1, 999, 50, 0),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+    describe('Голосовые сообщения и voiceUrl (Унификация и интеграция с frontend)', () => {
+    it('getChatMessages должен обогащать голосовые сообщения полем voiceUrl', async () => {
+      mockMessagesRepository.find.mockResolvedValueOnce([
+        { id: 10, content: '', chatId: 1, voiceFileId: 'uuid-voice-123' },
+      ]);
+
+      const messages = await service.getChatMessages(1, 10);
+      expect(messages[0]).toHaveProperty('voiceUrl', '/messages/voice/uuid-voice-123');
+    });
+
+    it('текстовые сообщения не должны иметь voiceUrl (null)', async () => {
+      mockMessagesRepository.find.mockResolvedValueOnce([
+        { id: 11, content: 'Текст', chatId: 1, voiceFileId: null },
+      ]);
+
+      const messages = await service.getChatMessages(1, 10);
+      expect(messages[0].voiceUrl).toBeNull();
+    });
   });
 
   describe('Voice Messages (Задача 2)', () => {
@@ -253,7 +307,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
         expect(mockMessagesRepository.update).toHaveBeenCalledWith(
           101,
           expect.objectContaining({
-            transcript: 'Распознанный голос',
+            transcript: 'Распознанный голос достаточной длины для проверки формирования выжимки голосового',
             sttStatus: 'completed',
           }),
         );
@@ -268,7 +322,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
           'message.transcribed',
           expect.objectContaining({
             messageId: 101,
-            transcript: 'Распознанный голос',
+            transcript: 'Распознанный голос достаточной длины для проверки формирования выжимки голосового',
             sttStatus: 'completed',
           }),
         );
@@ -276,7 +330,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
           'message.voice_summary',
           expect.objectContaining({
             messageId: 101,
-            voiceSummary: 'Краткое резюме',
+            summary: 'Краткое резюме',
             summaryStatus: 'completed',
           }),
         );
@@ -311,7 +365,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
           'message.transcribed',
           expect.objectContaining({
             messageId: 101,
-            sttStatus: 'failed',
+            transcriptStatus: 'failed',
           }),
         );
       } finally {
@@ -319,9 +373,85 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
       }
     });
 
+        it('для коротких голосовых (< 50 символов) summary должно пропускаться (skipped)', async () => {
+      mockTranslationService.transcribeAudio.mockResolvedValueOnce({
+        transcript: 'Привет, я на встрече', // 20 символов < 50
+        language: 'ru',
+        status: 'completed',
+      });
+
+      const fs = require('fs');
+      const path = require('path');
+      const tmpFile = path.join(process.cwd(), 'temp_test_short.webm');
+      fs.writeFileSync(tmpFile, 'FAKE_AUDIO');
+
+      try {
+        await service.processVoiceInBackground(101, tmpFile, 'audio/webm', 'ru');
+
+        expect(mockMessagesRepository.update).toHaveBeenCalledWith(
+          101,
+          expect.objectContaining({
+            transcript: 'Привет, я на встрече',
+            sttStatus: 'completed',
+          }),
+        );
+        expect(mockMessagesRepository.update).toHaveBeenCalledWith(
+          101,
+          expect.objectContaining({
+            voiceSummary: null,
+            summaryStatus: 'skipped',
+          }),
+        );
+        expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+          'message.voice_summary',
+          expect.objectContaining({
+            messageId: 101,
+            voiceSummary: null,
+            summaryStatus: 'skipped',
+          }),
+        );
+        // generateSummary не должен вызываться для коротких фраз
+        expect(mockTranslationService.generateSummary).not.toHaveBeenCalled();
+      } finally {
+        if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+      }
+    });
+
+    describe('getChatSummary (Сводка переписки чата)', () => {
+      it('должен блокировать доступ неучастнику чата (403 Forbidden)', async () => {
+        await expect(service.getChatSummary(1, 999, 20)).rejects.toThrow(ForbiddenException);
+      });
+
+      it('должен формировать сводку по сообщениям чата с ограничением take', async () => {
+        mockMessagesRepository.find.mockResolvedValueOnce([
+          { id: 1, content: 'Привет! Давай согласуем релиз и архитектуру бэкенда', userId: 10, transcript: null, user: { username: 'alice' } },
+          { id: 2, content: 'Отлично, я настроил миграции и WebSocket рассылку', userId: 20, transcript: null, user: { username: 'bob' } },
+        ]);
+        mockTranslationService.generateSummary.mockResolvedValueOnce({
+          summary: 'Команда обсудила релиз и WebSocket',
+          status: 'completed',
+        });
+
+        const res = await service.getChatSummary(1, 10, 15);
+
+        expect(mockMessagesRepository.find).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { chatId: 1, isDeleted: false },
+            take: 15,
+          }),
+        );
+        expect(res).toEqual({
+          chatId: 1,
+          summary: 'Команда обсудила релиз и WebSocket',
+          messagesCount: 2,
+          status: 'completed',
+        });
+      });
+    });
+
     it('при ошибке Summary transcript должен сохраняться, а summaryStatus становиться failed', async () => {
       mockTranslationService.transcribeAudio.mockResolvedValueOnce({
-        transcript: 'Транскрипт готов',
+        transcript: 'Транскрипт готов и содержит более пятидесяти символов для проверки вызова summary',
         summary: undefined,
         language: 'ru',
         status: 'completed',
@@ -342,7 +472,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
         expect(mockMessagesRepository.update).toHaveBeenCalledWith(
           101,
           expect.objectContaining({
-            transcript: 'Транскрипт готов',
+            transcript: 'Транскрипт готов и содержит более пятидесяти символов для проверки вызова summary',
             sttStatus: 'completed',
           }),
         );

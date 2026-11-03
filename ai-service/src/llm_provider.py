@@ -12,6 +12,10 @@ class LLMProviderError(RuntimeError):
     """A provider request failed or returned an invalid completion."""
 
 
+class SpeechProviderTimeout(LLMProviderError):
+    """The configured speech service did not respond before its deadline."""
+
+
 class LMStudioClient:
     """Call LM Studio's OpenAI-compatible chat-completions endpoint."""
 
@@ -157,11 +161,13 @@ class OpenAICompatibleSTTClient:
                     data=data,
                 )
         except httpx.TimeoutException as exc:
-            raise LLMProviderError("Speech provider timed out") from exc
+            raise SpeechProviderTimeout("Speech provider timed out") from exc
         except httpx.HTTPError as exc:
             raise LLMProviderError(f"Speech provider request failed: {exc}") from exc
 
         if response.is_error:
+            if response.status_code == 504:
+                raise SpeechProviderTimeout("Speech provider timed out")
             raise LLMProviderError(
                 f"Speech provider returned HTTP {response.status_code}"
             )

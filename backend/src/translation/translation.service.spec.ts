@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { TranslationService } from './translation.service';
 import { RedisService } from '../redis/redis.service';
 
@@ -104,6 +104,136 @@ describe('TranslationService - Чистый контракт без legacy-по�
 
       expect(res.status).toBe('completed');
       expect(res.translatedText).toBe('Hello');
+    });
+
+    it('reads the current shared result field returned by the AI API', async () => {
+      mockHttpService.post.mockReturnValueOnce(
+        of({ data: { result: 'Good morning', source_lang: 'ru', target_lang: 'en' } }),
+      );
+
+      const result = await service.translate('Доброе утро', 'ru', 'en');
+
+      expect(result.status).toBe('completed');
+      expect(result.translatedText).toBe('Good morning');
+    });
+  });
+
+  describe('generateSummary() - единый контракт /summary', () => {
+    it('отправляет текст голосового сообщения через контракт messages и возвращает summary', async () => {
+      mockHttpService.post.mockReturnValueOnce(
+        of({ data: { summary: 'Краткая сводка', decisions: [], participants: ['voice'], language: 'ru', provider: 'lmstudio' } }),
+      );
+
+      const result = await service.generateSummary('  Обсудили сроки проекта.  ');
+
+      expect(mockHttpService.post).toHaveBeenCalledWith(
+        'http://localhost:8000/summary',
+        {
+          messages: [{ sender_id: 'voice', text: 'Обсудили сроки проекта.' }],
+          language: 'ru',
+        },
+        expect.objectContaining({ timeout: 120000 }),
+      );
+      expect(result).toEqual({ summary: 'Краткая сводка', status: 'completed' });
+    });
+  });
+
+  it('gives real Whisper enough configurable time and parses its transcript', async () => {
+    mockHttpService.post.mockReturnValueOnce(
+      of({ data: { transcript: 'Распознано', recognized_text: 'Распознано', language: 'ru', provider: 'openai_compatible' } }),
+    );
+
+    const result = await service.transcribeAudio(
+      Buffer.from('audio'),
+      'voice.webm',
+      'audio/webm',
+      'ru',
+    );
+
+    expect(mockHttpService.post).toHaveBeenCalledWith(
+      'http://localhost:8000/stt',
+      expect.any(FormData),
+      expect.objectContaining({ timeout: 120000 }),
+    );
+    expect(result).toEqual({
+      transcript: 'Распознано',
+      summary: undefined,
+      language: 'ru',
+      status: 'completed',
+      provider: 'openai_compatible',
+    });
+  });
+
+  it('preserves Whisper timeout details after the bounded retry', async () => {
+    const timeout = Object.assign(new Error('timeout of 120000ms exceeded'), {
+      code: 'ECONNABORTED',
+    });
+    mockHttpService.post.mockImplementation(() => throwError(() => timeout));
+
+    const result = await service.transcribeAudio(
+      Buffer.from('audio'),
+      'voice.wav',
+      'audio/wav',
+      'ru',
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: 'timeout of 120000ms exceeded',
+    });
+    expect(mockHttpService.post).toHaveBeenCalledTimes(2);
+  });
+  describe('generateSummary() - согласованный эндпоинт /summary', () => {
+    it('должен отправлять { text } на /summary и возвращать summary', async () => {
+      mockHttpService.post.mockReturnValueOnce(
+        of({
+          data: {
+            summary: 'Краткая суть переписки',
+          },
+        }),
+      );
+
+      const res = await service.generateSummary('Длинный текст диалога или голосового сообщения');
+
+      expect(mockHttpService.post).toHaveBeenCalledWith(
+        'http://localhost:8000/summary',
+        { messages: [{ sender_id: 'user', text: 'Длинный текст диалога или голосового сообщения' }], language: 'ru' },
+        expect.any(Object),
+      );
+      expect(res.status).toBe('completed');
+      expect(res.summary).toBe('Краткая суть переписки');
+    });
+
+    it('должен использовать фолбэк на /secretary, если /summary возвращает 404', async () => {
+      const notFoundErr = new Error('Not found');
+      (notFoundErr as any).response = { status: 404 };
+
+      mockHttpService.post
+        .mockReturnValueOnce(throwError(() => notFoundErr))
+        .mockReturnValueOnce(
+          of({
+            data: {
+              message: 'Итоги обсуждения: суть',
+            },
+          }),
+        );
+
+      const res = await service.generateSummary('Текст для сводки');
+
+      expect(mockHttpService.post).toHaveBeenNthCalledWith(
+        1,
+        'http://localhost:8000/summary',
+        { messages: [{ sender_id: 'user', text: 'Текст для сводки' }], language: 'ru' },
+        expect.any(Object),
+      );
+      expect(mockHttpService.post).toHaveBeenNthCalledWith(
+        2,
+        'http://localhost:8000/secretary',
+        { action: 'summary', details: 'Текст для сводки' },
+        expect.any(Object),
+      );
+      expect(res.status).toBe('completed');
+      expect(res.summary).toBe('Итоги обсуждения: суть');
     });
   });
 });
