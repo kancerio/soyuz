@@ -14,12 +14,12 @@ export class User {
   @Column({ type: 'varchar', length: 255 })
   password: string;
 
-  @Column({ type: 'varchar', default: 'ru', length: 10 })
-  language: string;
-
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;
 
   @Column({ type: 'varchar', nullable: true, length: 500 })
   refreshToken: string;
+
+  @Column({ type: 'varchar', default: 'en', length: 2 })
+  preferred_language: string;
 }

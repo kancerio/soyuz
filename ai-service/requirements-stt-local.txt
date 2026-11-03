@@ -1,0 +1,2 @@
+# Optional host-side dependency for the local Whisper adapter.
+faster-whisper>=1.2,<2

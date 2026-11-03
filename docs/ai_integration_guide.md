@@ -1,48 +1,14 @@
-# Интеграция текстового AI-сервиса
+# Интеграция AI-сервиса
 
-Актуальные endpoint:
+Frontend использует адрес из `NEXT_PUBLIC_AI_API_URL` (по умолчанию
+`http://localhost:8000`) и вызывает рабочий AI-сервис напрямую:
 
-- `POST /translate`
-- `POST /assist`
+- `POST /translate` — перевод последнего сообщения;
+- `POST /assist` — действия `shorten`, `formal`, `friendly`;
+- `POST /summary` — сводка текущего чата;
+- `POST /stt` — загрузка аудиофайла и распознавание в поле ввода;
+- `POST /document-analysis` — выбор документа и отображение результата.
 
-Оба возвращают `TextOperationResponse`:
-
-```json
-{
-  "input_text": "Hello",
-  "result": "[mock en->ru] Hello",
-  "action": "translate",
-  "source_lang": "en",
-  "target_lang": "ru",
-  "correlation_id": "message-42",
-  "mock": true
-}
-```
-
-Пример перевода:
-
-```http
-POST /translate
-Content-Type: application/json
-X-Correlation-ID: message-42
-
-{"text":"Hello","source_lang":"en","target_lang":"ru"}
-```
-
-Пример помощника:
-
-```http
-POST /assist
-Content-Type: application/json
-
-{"text":"Send the report","action":"friendly"}
-```
-
-Backend должен считать результат успешным только при HTTP 200 и использовать
-поле `result`. При `mock=true` результат нельзя сохранять как реальный перевод
-или учитывать в метриках качества. Для HTTP 422 следует показать ошибку поля из
-`error.details`; HTTP 503 означает, что mock выключен, а AI-провайдер не
-настроен.
-
-Подробный контракт находится в `api-contracts.md`, языки — в
-`language_codes.md`, OpenAPI — в `ai-api.yaml`.
+В Docker значение `AI_ALLOWED_ORIGINS` должно содержать origin frontend,
+например `http://localhost:3000`. Кнопки AI показывают состояние загрузки и
+ошибку провайдера в панели чата; результат не отправляется в чат автоматически.

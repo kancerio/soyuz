@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+import src.main as main
 from src.main import MAX_TEXT_LENGTH, app
 
 client = TestClient(app)
@@ -42,6 +43,26 @@ def test_translate_defaults_source_language_to_auto(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["source_lang"] == "auto"
+
+
+def test_translate_uses_configured_lm_studio(monkeypatch):
+    class FakeClient:
+        async def complete(self, messages, **kwargs):
+            assert messages[-1]["role"] == "user"
+            return "Привет, мир"
+
+    monkeypatch.setenv("AI_MOCK_MODE", "false")
+    monkeypatch.setenv("AI_PROVIDER", "lmstudio")
+    monkeypatch.setattr(main, "get_llm_client", lambda: FakeClient())
+
+    response = client.post(
+        "/translate",
+        json={"text": "Hello world", "source_lang": "en", "target_lang": "ru"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["result"] == "Привет, мир"
+    assert response.json()["mock"] is False
 
 
 def test_translate_and_assist_share_openapi_response_model():

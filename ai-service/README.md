@@ -4,14 +4,16 @@
 
 ## Запуск через Docker Compose (рекомендуется)
 
-1. Из корня проекта выполните:
+1. Скопируйте `.env.example` в `.env` и при необходимости заполните:
    ```bash
-   docker compose -f docker-compose.ai-only.yml up --build
+   cp .env.example .env
    ```
-2. Сервис будет доступен на `http://localhost:8000`.
-3. Документация API (Swagger): `http://localhost:8000/docs`.
-
-Compose включает `AI_MOCK_MODE=true`. Mock не требует моделей и внешних API.
+2. Из корня проекта выполните:
+   ```bash
+   docker compose up --build ai-service
+   ```
+3. Сервис будет доступен на `http://localhost:8000`
+4. Документация API (Swagger): `http://localhost:8000/docs`
 
 ## Локальный запуск (без Docker)
 
@@ -28,9 +30,9 @@ Compose включает `AI_MOCK_MODE=true`. Mock не требует моде�
    ```bash
    pip install -r requirements.txt
    ```
-4. Включите mock-режим и запустите сервер в PowerShell:
-   ```powershell
-   $env:AI_MOCK_MODE = "true"
+4. Скопируйте `.env.example` в `.env` и настройте.
+5. Запустите сервер:
+   ```bash
    uvicorn src.main:app --reload --port 8000
    ```
 
@@ -41,13 +43,56 @@ cd ai-service
 pytest tests -v
 ```
 
+## Рабочий AI-контур
+
+По умолчанию `AI_PROVIDER=mock` и `STT_PROVIDER=mock`, поэтому локальный
+запуск не требует внешних сервисов. Для стенда задайте
+`AI_MOCK_MODE=false`, `AI_PROVIDER=lmstudio` и укажите
+`AI_BASE_URL`/`AI_MODEL` из OpenAI-совместимого сервера LM Studio.
+Для Qwen задайте `AI_REASONING_EFFORT=none` и `AI_MAX_TOKENS=512`, чтобы
+ответ не заканчивался внутри скрытого рассуждения или на середине JSON.
+Перевод, `/assist` и `/summary` используют один текстовый провайдер.
+
+LM Studio не принимает аудио. Для `/stt` нужен отдельный Whisper-сервис с
+совместимым endpoint `/v1/audio/transcriptions`:
+
+```env
+STT_PROVIDER=openai_compatible
+STT_BASE_URL=http://whisper:9000/v1
+STT_MODEL=whisper-1
+STT_API_KEY=
+```
+
+Для локального стенда в репозитории есть готовый адаптер на `faster-whisper`.
+Он запускается отдельным процессом на хосте, а контейнер `ai-service` обращается
+к нему через `host.docker.internal`:
+
+```powershell
+cd ai-service
+python -m pip install -r requirements-stt-local.txt
+$env:WHISPER_MODEL = "Systran/faster-whisper-base"
+$env:WHISPER_DEVICE = "cpu"
+$env:WHISPER_COMPUTE_TYPE = "int8"
+python tools/local_whisper_server.py
+```
+
+После запуска адаптера задайте `STT_PROVIDER=openai_compatible`,
+`STT_BASE_URL=http://host.docker.internal:9000/v1` и
+`STT_MODEL=whisper-1`. Для standalone-запуска без Docker используйте
+`http://127.0.0.1:9000/v1`.
+
+`/stt` проверяет формат и размер файла, а `/summary` проверяет список сообщений.
+Ошибки валидации возвращаются с HTTP 422, слишком большой файл — с 413,
+неподдерживаемый тип — с 415, недоступный провайдер — с 503, а ошибка ответа
+провайдера — с 502. Контракт `/translate` и `/assist` описан в
+`../docs/api-contracts.md`.
+Тесты провайдеров используют транспорт без сети; реальный стенд нужно проверить
+smoke-запросами после запуска LM Studio и Whisper.
+
 ## Структура проекта
 
 - `src/main.py` – основной файл приложения FastAPI
+- `src/config.py` – загрузка переменных окружения
 - `tests/` – модульные тесты
 - `requirements.txt` – зависимости
-
-Контракты `/translate` и `/assist`, ошибки и ограничения качества описаны в
-`../docs/api-contracts.md`. Поддерживаемые языки перечислены в
-`../docs/language_codes.md`.
 

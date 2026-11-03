@@ -116,6 +116,33 @@ docker compose -f docker-compose.ai-only.yml up --build
 - Флаг `mock` обязателен в успешном ответе, поэтому клиент может исключить
   mock-результат из пользовательского интерфейса и метрик качества.
 
-Остальные тестовые endpoint (`/stt`, `/secretary`, `/document-analysis`) пока
-сохраняют прежние контракты. Актуальная машиночитаемая схема находится в
-`docs/ai-api.yaml` и генерируется из FastAPI.
+## Реальный локальный провайдер
+
+Для LM Studio задайте `AI_MOCK_MODE=false`, `AI_PROVIDER=lmstudio`,
+`AI_BASE_URL=http://127.0.0.1:1234/v1` и `AI_MODEL` из
+`GET /v1/models`. `AI_API_KEY=lm-studio` используется как совместимый
+заголовок, а не как внешний секрет. Перевод, помощник и суммаризация используют
+один OpenAI-совместимый `/v1/chat/completions`. Ошибка провайдера возвращает
+HTTP 502; отсутствие настроенного провайдера при отключённом mock — HTTP 503.
+
+## STT и суммаризация
+
+`POST /stt` принимает multipart-поле `audio` (WAV, MP3, WebM, OGG или
+M4A) и необязательный `language`. По умолчанию размер ограничен 25 MiB.
+Для рабочего режима используется OpenAI-совместимый Whisper:
+
+```env
+STT_PROVIDER=openai_compatible
+STT_BASE_URL=http://whisper:9000/v1
+STT_MODEL=whisper-1
+STT_API_KEY=
+```
+
+`POST /summary` (алиас `/summarize`) принимает от 1 до 100 сообщений
+`{sender_id, text, timestamp}` и возвращает `summary`, `decisions`,
+`participants`, `language` и `provider`. Mock и локальная модель
+возвращают детерминированный результат только для проверки интеграции.
+
+`POST /document-analysis` пока сохраняет демонстрационный ответ. Полная
+машиночитаемая схема находится в `docs/ai-api.yaml` и генерируется из
+FastAPI.

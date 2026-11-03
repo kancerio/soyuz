@@ -1,44 +1,38 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
+import { useUser } from '@/context/UserContext';
 
 export default function RegisterForm() {
   const { t } = useLanguage();
-  const router = useRouter();
+  const { register } = useUser();
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [country, setCountry] = useState('');
-  const [language, setLanguage] = useState('');
   const [error, setError] = useState('');
-  const [isClient, setIsClient] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
-    if (!email || !password) {
-      setError(t('fill_all_fields') || 'Fill all fields');
-      return;
+    setLoading(true);
+    try {
+      await register(email, username, password);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
-
-    // TODO: реальный запрос на бэк
-    localStorage.setItem('token', 'fake-jwt-token');
-    router.push('/chat');
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium mb-1">{t('email_or_phone')} *</label>
+        <label className="block text-sm font-medium mb-1">Email *</label>
         <input
-          type="text"
+          type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className="w-full px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
@@ -46,7 +40,17 @@ export default function RegisterForm() {
         />
       </div>
       <div>
-        <label className="block text-sm font-medium mb-1">{t('password')}*</label>
+        <label className="block text-sm font-medium mb-1">Username *</label>
+        <input
+          type="text"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          className="w-full px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
+          required
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium mb-1">{t('password')} *</label>
         <input
           type="password"
           value={password}
@@ -55,36 +59,16 @@ export default function RegisterForm() {
           required
         />
       </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">{t('country')}</label>
-        <input
-          type="text"
-          value={country}
-          onChange={(e) => setCountry(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">{t('language')}</label>
-        <select
-          value={language}
-          onChange={(e) => setLanguage(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
-        >
-          <option value="">{t('choose_language')}</option>
-          <option value="ru">Русский</option>
-          <option value="en">English</option>
-        </select>
-      </div>
       {error && <p className="text-red-500 text-sm">{error}</p>}
       <button
         type="submit"
-        className="w-full bg-green-600 text-white py-2 rounded-md hover:bg-green-700 transition"
+        disabled={loading}
+        className="w-full bg-green-600 text-white py-2 rounded-md hover:bg-green-700 disabled:opacity-50"
       >
-        {t('register')}
+        {loading ? '...' : t('register')}
       </button>
       <p className="text-center text-sm">
-        {t('have_account')}
+        {t('have_account')}{' '}
         <Link href="/login" className="text-blue-600 hover:underline">
           {t('login')}
         </Link>

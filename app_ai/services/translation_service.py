@@ -8,7 +8,7 @@ def translate_text(text: str, target_lang: str, source_lang: str = None) -> str:
     if settings.AI_MOCK_MODE:
         logger.info(f"MOCK: translate '{text}' to {target_lang} (source={source_lang})")
         return f"[mock_{target_lang}] {text}"
-    
+
     try:
         # Упрощённо: считаем, что исходный язык английский
         model, tokenizer = get_translation_model()
