@@ -65,6 +65,7 @@ export class ChatsController {
     const members = await this.chatsService.getChatMembers(+chatId);
     return members.map(m => ({
       userId: m.userId,
+      username: m.user?.username ?? '',
       role: m.role,
     }));
   }

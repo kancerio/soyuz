@@ -345,7 +345,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
           expect.objectContaining({
             messageId: 101,
             transcript: 'Распознанный голос достаточной длины для проверки формирования выжимки голосового',
-            sttStatus: 'completed',
+          transcriptStatus: 'completed',
           }),
         );
         expect(mockEventEmitter.emit).toHaveBeenCalledWith(
@@ -428,7 +428,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
           'message.voice_summary',
           expect.objectContaining({
             messageId: 101,
-            voiceSummary: null,
+            summary: null,
             summaryStatus: 'skipped',
           }),
         );

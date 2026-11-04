@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { User } from '../users/user.entity';
 import { Chat } from '../chats/chat.entity';
+import { ChatParticipant } from '../chats/chat-participant.entity';
 import { Message } from '../messages/message.entity';
 
 const enabled = process.env.DB_INTEGRATION_TESTS === 'true';
@@ -25,7 +26,7 @@ if (enabled && !databaseName.endsWith('_test')) {
       username: process.env.DB_USERNAME ?? 'messenger',
       password: process.env.DB_PASSWORD ?? 'secretpassword',
       database: databaseName,
-      entities: [User, Chat, Message],
+      entities: [User, Chat, ChatParticipant, Message],
       synchronize: true,
       dropSchema: true,
     });
@@ -49,7 +50,7 @@ if (enabled && !databaseName.endsWith('_test')) {
 
     const stored = await users.findOneByOrFail({ id: user.id });
     expect(stored.email).toBe('denis@example.test');
-    expect(stored.language).toBe('ru');
+    expect(stored.preferred_language).toBe('en');
     expect(stored.createdAt).toBeInstanceOf(Date);
   });
 

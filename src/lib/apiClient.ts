@@ -203,7 +203,7 @@ export const apiClient = {
     }),
 
   getChatMembers: (chatId: number) =>
-    request<Array<{ userId: number; role: string }>>(`/chats/${chatId}/members`),
+    request<Array<{ userId: number; username: string; role: 'owner' | 'admin' | 'member' }>>(`/chats/${chatId}/members`),
 
   updateMemberRole: (chatId: number, userId: number, role: string) =>
     request<{ userId: number; chatId: number; role: string }>(
