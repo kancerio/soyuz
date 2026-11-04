@@ -4,7 +4,12 @@ import json
 import httpx
 import pytest
 
-from src.llm_provider import LLMProviderError, LMStudioClient
+from src.llm_provider import (
+    LLMProviderError,
+    LLMProviderTimeout,
+    LMStudioClient,
+    ProviderUnavailableError,
+)
 
 
 def test_lm_studio_client_sends_openai_compatible_request():
@@ -53,7 +58,35 @@ def test_lm_studio_client_reports_http_errors():
         transport=httpx.MockTransport(handler),
     )
 
-    with pytest.raises(LLMProviderError, match="LM Studio returned HTTP 503"):
+    with pytest.raises(ProviderUnavailableError, match="LM Studio returned HTTP 503"):
+        asyncio.run(client.complete([{"role": "user", "content": "Проверка"}]))
+
+
+def test_lm_studio_client_maps_connection_failure_to_unavailable():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    client = LMStudioClient(
+        base_url="http://127.0.0.1:1234/v1",
+        model="qwen-local",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ProviderUnavailableError, match="LM Studio is unavailable"):
+        asyncio.run(client.complete([{"role": "user", "content": "Проверка"}]))
+
+
+def test_lm_studio_client_maps_timeout_to_gateway_timeout():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow response", request=request)
+
+    client = LMStudioClient(
+        base_url="http://127.0.0.1:1234/v1",
+        model="qwen-local",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(LLMProviderTimeout, match="LM Studio request timed out"):
         asyncio.run(client.complete([{"role": "user", "content": "Проверка"}]))
 
 

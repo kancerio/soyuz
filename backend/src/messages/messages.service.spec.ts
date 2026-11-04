@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ForbiddenException, NotFoundException, BadRequestException, BadGatewayException, GatewayTimeoutException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, BadRequestException, BadGatewayException, GatewayTimeoutException, ServiceUnavailableException } from '@nestjs/common';
 
 jest.mock('@nestjs/event-emitter', () => {
   class MockEventEmitter2 {
@@ -131,6 +131,28 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
     await expect(
       service.sendMessageWithTranslation(1, 999, 'Привет'),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('возвращает 503-контракт при недоступности AI-провайдера', async () => {
+    mockTranslationService.translate.mockResolvedValueOnce({
+      status: 'failed',
+      providerStatus: 503,
+      error: 'provider unavailable',
+    });
+    await expect(service.translateText('Привет', 'ru', 'en')).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+  });
+
+  it('возвращает 504-контракт при тайм-ауте AI-провайдера', async () => {
+    mockTranslationService.summarizeMessages.mockResolvedValueOnce({
+      status: 'failed',
+      providerStatus: 504,
+      error: 'provider timeout',
+    });
+    await expect(
+      service.summarizeMessages([{ sender_id: 'alice', text: 'Обсудили задачу' }], 'ru'),
+    ).rejects.toThrow(GatewayTimeoutException);
   });
 
   it('должен автоматически определить targetLang по языку собеседника в чате', async () => {

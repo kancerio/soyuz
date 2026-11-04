@@ -1,6 +1,8 @@
+import pytest
 from fastapi.testclient import TestClient
 
 import src.main as main
+from src.llm_provider import LLMProviderTimeout, ProviderUnavailableError
 from src.main import MAX_TEXT_LENGTH, app
 
 client = TestClient(app)
@@ -111,6 +113,46 @@ def test_translate_returns_503_when_mock_is_disabled(monkeypatch):
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "ai_provider_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        ("/translate", {"text": "Hello", "source_lang": "en", "target_lang": "ru"}),
+        ("/assist", {"text": "Hello", "action": "formal"}),
+    ],
+)
+def test_text_endpoints_return_503_if_provider_is_unreachable(monkeypatch, path, payload):
+    class OfflineClient:
+        async def complete(self, *_args, **_kwargs):
+            raise ProviderUnavailableError("LM Studio is unavailable")
+
+    monkeypatch.setenv("AI_MOCK_MODE", "false")
+    monkeypatch.setenv("AI_PROVIDER", "lmstudio")
+    monkeypatch.setattr(main, "get_llm_client", lambda: OfflineClient())
+
+    response = client.post(path, json=payload)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "ai_provider_unavailable"
+
+
+def test_translate_returns_504_when_provider_times_out(monkeypatch):
+    class SlowClient:
+        async def complete(self, *_args, **_kwargs):
+            raise LLMProviderTimeout("LM Studio request timed out")
+
+    monkeypatch.setenv("AI_MOCK_MODE", "false")
+    monkeypatch.setenv("AI_PROVIDER", "lmstudio")
+    monkeypatch.setattr(main, "get_llm_client", lambda: SlowClient())
+
+    response = client.post(
+        "/translate",
+        json={"text": "Hello", "source_lang": "en", "target_lang": "ru"},
+    )
+
+    assert response.status_code == 504
+    assert response.json()["error"]["code"] == "provider_timeout"
 
 
 def test_translate_logs_metadata_without_text(monkeypatch, caplog):

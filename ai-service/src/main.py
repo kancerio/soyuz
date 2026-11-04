@@ -16,7 +16,9 @@ from pydantic_core import PydanticCustomError
 
 from .llm_provider import (
     LLMProviderError,
+    LLMProviderTimeout,
     OpenAICompatibleSTTClient,
+    ProviderUnavailableError,
     SpeechProviderTimeout,
     lm_studio_from_env,
 )
@@ -376,6 +378,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         413: "payload_too_large",
         415: "unsupported_media_type",
         422: "validation_error",
+        504: "provider_timeout",
         502: "ai_provider_error",
     }
     detail = exc.detail if isinstance(exc.detail, str) else "Request failed"
@@ -440,6 +443,7 @@ def _mock_assist(text: str, action: str) -> str:
         422: {"model": ErrorResponse, "description": "Request validation failed"},
         502: {"model": ErrorResponse, "description": "AI provider error"},
         503: {"model": ErrorResponse, "description": "AI provider unavailable"},
+        504: {"model": ErrorResponse, "description": "AI provider timeout"},
     },
 )
 async def translate(req: TranslateRequest, request: Request):
@@ -476,6 +480,10 @@ async def translate(req: TranslateRequest, request: Request):
             is_mock = False
     except ServiceUnavailableError:
         raise
+    except ProviderUnavailableError as exc:
+        raise ServiceUnavailableError(str(exc)) from exc
+    except LLMProviderTimeout as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
     except LLMProviderError as exc:
         logger.exception(
             "ai_provider_error endpoint=translate correlation_id=%s", correlation_id
@@ -506,6 +514,7 @@ async def translate(req: TranslateRequest, request: Request):
         422: {"model": ErrorResponse, "description": "Request validation failed"},
         502: {"model": ErrorResponse, "description": "AI provider error"},
         503: {"model": ErrorResponse, "description": "AI provider unavailable"},
+        504: {"model": ErrorResponse, "description": "AI provider timeout"},
     },
 )
 async def assist(req: AssistRequest, request: Request):
@@ -542,6 +551,10 @@ async def assist(req: AssistRequest, request: Request):
             is_mock = False
     except ServiceUnavailableError:
         raise
+    except ProviderUnavailableError as exc:
+        raise ServiceUnavailableError(str(exc)) from exc
+    except LLMProviderTimeout as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
     except LLMProviderError as exc:
         logger.exception(
             "ai_provider_error endpoint=assist action=%s correlation_id=%s",
@@ -644,12 +657,20 @@ def _mock_summary(req: SummaryRequest) -> SummaryResponse:
 @app.post(
     "/summary",
     response_model=SummaryResponse,
-    responses={502: {"description": "AI provider error"}},
+    responses={
+        502: {"description": "AI provider error"},
+        503: {"model": ErrorResponse, "description": "AI provider unavailable"},
+        504: {"model": ErrorResponse, "description": "AI provider timeout"},
+    },
 )
 @app.post(
     "/summarize",
     response_model=SummaryResponse,
-    responses={502: {"description": "AI provider error"}},
+    responses={
+        502: {"description": "AI provider error"},
+        503: {"model": ErrorResponse, "description": "Speech provider unavailable"},
+        504: {"description": "Speech provider timeout"},
+    },
 )
 async def summarize(req: SummaryRequest):
     provider_name = ai_provider_name()
@@ -692,6 +713,8 @@ async def summarize(req: SummaryRequest):
         )
     except ServiceUnavailableError:
         raise
+    except ProviderUnavailableError as exc:
+        raise ServiceUnavailableError(str(exc)) from exc
     except LLMProviderError as exc:
         logger.exception(
             "ai_provider_error endpoint=summary provider=%s", provider_name
@@ -753,6 +776,8 @@ async def speech_to_text(audio: UploadFile = File(...), language: str = Form("ru
             )
     except ServiceUnavailableError:
         raise
+    except ProviderUnavailableError as exc:
+        raise ServiceUnavailableError(str(exc)) from exc
     except SpeechProviderTimeout as exc:
         logger.exception(
             "speech_provider_timeout endpoint=stt provider=%s", provider_name

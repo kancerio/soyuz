@@ -45,9 +45,12 @@ The suite includes the frontend API client and voice utility tests. The latest
 run passed **57 tests in 15 suites**. Whole-backend coverage was 50.65% of
 statements, 49.05% of branches, and 50.37% of lines. On the AI/message/controller
 files changed for this work, coverage was 69.77% of statements and 60.46% of
-functions. The CI workflow uploads the coverage output as an artifact. It also
-builds the frontend and backend and keeps the existing AI tests and Docker
-build.
+functions. At the time of that run, CI did not yet install and build the
+frontend/backend. The current workflow now runs those builds, Backend tests, AI
+tests, PostgreSQL integration tests, and an AI Docker build with a mock-mode
+health smoke check. See [`ai-run-and-check.md`](ai-run-and-check.md) for current
+commands. CI's Docker smoke check uses mock providers and is not a real-model
+verification.
 
 The local frontend production build passed with `node
 node_modules/next/dist/bin/next build`.
@@ -112,7 +115,7 @@ reliability. Whisper returns transcript text only, without word timestamps or
 speaker labels. A larger corpus of reviewed, task-specific examples is still
 needed for a meaningful quality benchmark.
 
-The live provider smoke test exercised the real backend `TranslationService`
+The live provider smoke test recorded on 2026-10-20 exercised the real backend `TranslationService`
 against real LM Studio and Whisper. The application was then started with
 PostgreSQL and Redis in Docker and exercised over its HTTP API using an isolated
 `soyuz_validation` database. The legacy camelCase `userId/chatId` schema was
