@@ -59,3 +59,26 @@ src/
 
 - `npm run dev` — фронт; бэкенд на :3001, сокет-сервер на :3000 должны быть запущены.
 - Нет тестов на фронте — проверка вручную через dev-сервер.
+
+## Выводы сквозной проверки (2026-11-07, e2e 42/42)
+
+- **WS auth**: Gateway в проде требует JWT в событии `auth` (`initSocket` шлёт
+  accessToken из sessionStorage). Комнаты чатов подписываются на auth, но для
+  чатов, созданных ПОСЛЕ подключения, нужен `join_chat` (ChatWindow это делает).
+- **Статусы**: отправитель не получает собственное `new_message` (Gateway
+  исключает senderSocket) — подтверждение отправки только ответом REST.
+  `message_read` от получателя в открытом чате → отправитель получает
+  `message_status_update`.
+- **Голосовые**: `POST /messages/chat/:id/voice` → фоном STT+summary →
+  `message_transcribed`/`message_voice_summary` в комнату чата; история хранит
+  transcript/voiceSummary/voiceFileId; аудио отдаётся только участникам (JWT).
+- **Сводка чата**: `GET /messages/chat/:id/summary` — участникам, limit ≤ 50.
+- **Локальная БД**: в messages были legacy-колонки `userId`/`chatId` (NOT NULL)
+  поверх `user_id`/`chat_id` — дропнуты, мусорные строки удалены. При странных
+  500 на отправке — проверять схему.
+- **Тулчейн**: typescript закреплён на 5.4.5 — TS 5.9.x ломает типы
+  socket.io-client 4.8.3 ('has no exported member io'), next build не проходит.
+- **Окружение для проверки**: postgres+redis локально, AI-сервис:
+  `ai-service/venv/bin/python -m uvicorn src.main:app --port 8000` (mock-режим,
+  `.env` из `.env.example`), бэкенд: `npm run start:prod` в backend/ (nest start
+  падает на @types/multer), фронт: `npm run build && npm start`.
