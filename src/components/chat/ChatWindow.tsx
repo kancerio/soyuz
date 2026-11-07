@@ -118,8 +118,37 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     const handleNewMessage = (msg: any) => {
       if (Number(msg.chatId) !== chatIdNum) return;
       const incoming = mapBackendMessage(msg);
-      incoming.localStatus = msg.userId === user.id ? 'read' : 'delivered';
+      // локальный статус только для своих сообщений (вторые вкладки/устройства),
+      // флаги берём с сервера; delivered/read приходят через message_status_update
+      if (incoming.senderId === user?.id) {
+        incoming.localStatus = incoming.isRead
+          ? 'read'
+          : incoming.isDelivered
+            ? 'delivered'
+            : 'sent';
+      }
       setMessages((prev) => mergeMessages(prev, [incoming]));
+
+      // чужое сообщение в открытом чате сразу отмечаем прочитанным на сервере —
+      // Gateway пометит isRead и уведомит отправителя через message_status_update
+      if (incoming.senderId !== user?.id && !incoming.isRead) {
+        socket.emit('message_read', { messageId: incoming.id });
+      }
+    };
+
+    // Gateway уведомляет отправителя: { messageId, status: 'delivered' | 'read', readAt? }
+    const handleMessageStatusUpdate = (data: {
+      messageId: number;
+      status: 'delivered' | 'read';
+      readAt?: string;
+    }) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === data.messageId
+            ? { ...m, localStatus: data.status, readAt: data.readAt ?? m.readAt }
+            : m
+        )
+      );
     };
 
     const handleMessageTranslated = (data: {
@@ -211,6 +240,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     socket.on('message_translated', handleMessageTranslated);
     socket.on('message_transcribed', handleMessageTranscribed);
     socket.on('message_voice_summary', handleMessageVoiceSummary);
+    socket.on('message_status_update', handleMessageStatusUpdate);
     socket.on('message_updated', handleMessageUpdated);
     socket.on('message_deleted', handleMessageDeleted);
 
@@ -220,6 +250,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       socket.off('message_translated', handleMessageTranslated);
       socket.off('message_transcribed', handleMessageTranscribed);
       socket.off('message_voice_summary', handleMessageVoiceSummary);
+      socket.off('message_status_update', handleMessageStatusUpdate);
       socket.off('message_updated', handleMessageUpdated);
       socket.off('message_deleted', handleMessageDeleted);
     };
@@ -230,7 +261,28 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       setLoading(true);
       try {
         const data = await apiClient.getMessages(chatIdNum);
-        setMessages((prev) => mergeMessages(prev, data));
+        // восстанавливаем статусы своих сообщений из серверных флагов
+        const restored = data.map((m) =>
+          m.senderId === user?.id
+            ? {
+                ...m,
+                localStatus: (m.isRead
+                  ? 'read'
+                  : m.isDelivered
+                    ? 'delivered'
+                    : 'sent') as Message['localStatus'],
+              }
+            : m
+        );
+        setMessages((prev) => mergeMessages(prev, restored));
+
+        // непрочитанные чужие сообщения в открытом чате — сразу отмечаем на сервере
+        const socket = getSocket();
+        if (socket) {
+          restored
+            .filter((m) => m.senderId !== user?.id && !m.isRead)
+            .forEach((m) => socket.emit('message_read', { messageId: m.id }));
+        }
       } catch (error) {
         console.error('Failed to load messages:', error);
       } finally {
@@ -238,7 +290,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       }
     };
     fetchMessages();
-  }, [chatIdNum]);
+  }, [chatIdNum, user]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -267,56 +319,20 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     };
     setMessages((prev) => mergeMessages(prev, [tempMessage]));
 
-    let fallbackTimer: NodeJS.Timeout;
-    const socket = getSocket();
-    const cleanupFallback = () => fallbackTimer && clearTimeout(fallbackTimer);
-
-    const onNewMessageConfirm = (msg: any) => {
-      if (msg.userId === user?.id && msg.content === content && msg.chatId === chatIdNum) {
-        cleanupFallback();
-        socket?.off('new_message', onNewMessageConfirm);
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === tempId
-              ? {
-                  ...m,
-                  id: msg.id,
-                  localStatus: 'sent',
-                  timestamp: msg.createdAt ? new Date(msg.createdAt) : new Date(),
-                }
-              : m
-          )
-        );
-        setTimeout(() => {
-          setMessages((prev) =>
-            prev.map((m) => (m.id === msg.id ? { ...m, localStatus: 'delivered' } : m))
-          );
-        }, 1000);
-        setTimeout(() => {
-          setMessages((prev) =>
-            prev.map((m) => (m.id === msg.id ? { ...m, localStatus: 'read' } : m))
-          );
-        }, 3000);
-      }
-    };
-    socket?.on('new_message', onNewMessageConfirm);
-
-    fallbackTimer = setTimeout(async () => {
-      socket?.off('new_message', onNewMessageConfirm);
-      try {
-        const fresh = await apiClient.getMessages(chatIdNum);
-        setMessages((prev) => mergeMessages(prev, fresh));
-      } catch (err) {
-        console.error('Fallback failed:', err);
-      }
-    }, 5000);
-
+    // Ответ REST — реальное подтверждение сервера (id, timestamp).
+    // Gateway исключает отправителя из рассылки new_message.
+    // Дальнейшие delivered/read приходят только через message_status_update.
     try {
-      await apiClient.sendMessage(chatIdNum, content, 'auto', targetLanguage);
+      const saved = await apiClient.sendMessage(chatIdNum, content, 'auto', targetLanguage);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId
+            ? { ...m, id: saved.id, timestamp: saved.timestamp, localStatus: 'sent' }
+            : m
+        )
+      );
     } catch (error) {
       console.error('Failed to send message:', error);
-      cleanupFallback();
-      socket?.off('new_message', onNewMessageConfirm);
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }
   };
@@ -395,7 +411,7 @@ const handleVoiceReady = async (draft: VoiceDraft) => {
                 voiceFileId: result.voiceFileId ?? undefined,
                 uploadStatus: 'uploaded',
                 localStatus: 'sent',
-                // STT/summary придут по WS (задача 2)
+                // STT/summary придут по WS (message_transcribed / message_voice_summary)
                 transcriptStatus: 'processing',
                 summaryStatus: 'not_needed',
                 voiceMetadata: {
