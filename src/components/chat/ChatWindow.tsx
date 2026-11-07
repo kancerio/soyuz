@@ -636,10 +636,7 @@ const handleVoiceRetry = async (msg: Message) => {
           setNewMessage((prev) => (prev ? `${prev} ${text}` : text));
         }}
       />
-      <ChatSummaryPanel
-        messages={messages}
-        language={(user?.language || 'ru').toLowerCase()}
-      />
+      <ChatSummaryPanel chatId={chatIdNum} />
 
       <div className="p-2 border-b dark:border-gray-700 flex justify-between items-center">
         <div className="flex items-center gap-2">

@@ -2,72 +2,34 @@
 
 import { useState } from 'react';
 import { apiClient } from '@/lib/apiClient';
-import { Message } from '@/types/chat';
-import { useLanguage } from '@/context/LanguageContext';
 
 type Phase = 'idle' | 'loading' | 'done' | 'error';
 
 interface ChatSummaryPanelProps {
-  messages: Message[];
-  /** Язык сводки, по умолчанию из профиля / UI */
-  language?: string;
+  chatId: number;
 }
 
-export default function ChatSummaryPanel({
-  messages,
-  language = 'ru',
-}: ChatSummaryPanelProps) {
-  const { t } = useLanguage();
+export default function ChatSummaryPanel({ chatId }: ChatSummaryPanelProps) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [summary, setSummary] = useState('');
-  const [details, setDetails] = useState<string[]>([]);
+  const [messagesCount, setMessagesCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const usable = messages.filter((m) => {
-    if (m.isDeleted) return false;
-    if (m.type === 'voice') {
-      return Boolean(m.transcript?.trim());
-    }
-    return Boolean(m.content?.trim() && m.content !== '[Голосовое сообщение]');
-  });
-
-  const buildPayload = () =>
-    usable.map((m) => ({
-      sender_id: String(m.senderId),
-      text:
-        m.type === 'voice' && m.transcript
-          ? m.transcript
-          : m.content,
-      timestamp: m.timestamp.toISOString(),
-    }));
-
   const run = async () => {
-    if (!usable.length) {
-      setPhase('error');
-      setError('Нет сообщений для сводки');
-      return;
-    }
     setPhase('loading');
     setError(null);
     setSummary('');
-    setDetails([]);
+    setMessagesCount(null);
     setCopied(false);
 
     try {
-      const res = await apiClient.summarizeMessages(language, buildPayload());
+      const res = await apiClient.getChatSummary(chatId);
       if (res.status === 'failed' || !res.summary) {
         throw new Error('Не удалось получить сводку');
       }
       setSummary(res.summary);
-      const extra: string[] = [];
-      if (res.decisions?.length) {
-        extra.push('Решения:', ...res.decisions.map((d) => `• ${d}`));
-      }
-      if (res.participants?.length) {
-        extra.push(`Участники: ${res.participants.join(', ')}`);
-      }
-      setDetails(extra);
+      setMessagesCount(res.messagesCount);
       setPhase('done');
     } catch (e: any) {
       setPhase('error');
@@ -76,7 +38,8 @@ export default function ChatSummaryPanel({
   };
 
   const copy = async () => {
-    const text = [summary, ...details].filter(Boolean).join('\n');
+    const text =
+      messagesCount != null ? `${summary}\n\nСообщений в сводке: ${messagesCount}` : summary;
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
@@ -89,7 +52,7 @@ export default function ChatSummaryPanel({
   const reset = () => {
     setPhase('idle');
     setSummary('');
-    setDetails([]);
+    setMessagesCount(null);
     setError(null);
     setCopied(false);
   };
@@ -103,8 +66,7 @@ export default function ChatSummaryPanel({
           <button
             type="button"
             onClick={run}
-            disabled={!usable.length}
-            className="rounded bg-amber-600 px-3 py-1 text-sm text-white hover:bg-amber-700 disabled:opacity-50"
+            className="rounded bg-amber-600 px-3 py-1 text-sm text-white hover:bg-amber-700"
           >
             Сформировать
           </button>
@@ -160,10 +122,6 @@ export default function ChatSummaryPanel({
             </button>
           </>
         )}
-
-        {!usable.length && phase === 'idle' && (
-          <span className="text-xs text-gray-500">Нужны текстовые или расшифрованные сообщения</span>
-        )}
       </div>
 
       {phase === 'error' && error && (
@@ -175,12 +133,10 @@ export default function ChatSummaryPanel({
       {phase === 'done' && summary && (
         <div className="mt-2 rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-gray-900 p-3 text-sm">
           <p className="whitespace-pre-wrap">{summary}</p>
-          {details.length > 0 && (
-            <ul className="mt-2 space-y-0.5 text-xs text-gray-600 dark:text-gray-400">
-              {details.map((line, i) => (
-                <li key={i}>{line}</li>
-              ))}
-            </ul>
+          {messagesCount != null && (
+            <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+              Сообщений в сводке: {messagesCount}
+            </p>
           )}
         </div>
       )}

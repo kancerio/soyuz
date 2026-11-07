@@ -289,6 +289,17 @@ export const apiClient = {
       body: JSON.stringify({ language, messages }),
     }),
 
+  /** Защищённая сводка переписки чата — сообщения не покидают сервер */
+  getChatSummary: (chatId: number, limit?: number) =>
+    request<{
+      chatId: number;
+      summary: string;
+      messagesCount: number;
+      status: 'completed' | 'failed' | 'skipped';
+    }>(
+      `/messages/chat/${chatId}/summary${limit ? `?limit=${limit}` : ''}`
+    ),
+
   transcribeAudio: async (file: Blob, language: string) => {
     const formData = new FormData();
     const extension = file.type.includes('wav')
