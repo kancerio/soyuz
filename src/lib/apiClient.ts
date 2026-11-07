@@ -92,16 +92,16 @@ async function request<T>(
   return response.json();
 }
 
-function mapSttStatus(stt?: string): TranscriptStatus {
+export function mapSttStatus(stt?: string): TranscriptStatus {
   if (stt === 'pending') return 'processing';
   if (stt === 'none' || !stt) return 'skipped';
   if (stt === 'completed' || stt === 'failed') return stt;
   return 'skipped';
 }
 
-function mapSummaryStatus(s?: string): SummaryStatus {
+export function mapSummaryStatus(s?: string): SummaryStatus {
   if (s === 'pending') return 'processing';
-  if (s === 'none' || !s) return 'not_needed';
+  if (s === 'none' || s === 'skipped' || !s) return 'not_needed';
   if (s === 'completed' || s === 'failed') return s;
   return 'not_needed';
 }

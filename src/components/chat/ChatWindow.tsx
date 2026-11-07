@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiClient, mapBackendMessage } from '@/lib/apiClient';
+import { apiClient, mapBackendMessage, mapSttStatus, mapSummaryStatus } from '@/lib/apiClient';
 import { initSocket, getSocket } from '@/lib/socket';
 import { useUser } from '@/context/UserContext';
 import { useLanguage } from '@/context/LanguageContext';
@@ -142,21 +142,16 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       );
     };
 
-const handleMessageTranscribed = (data: {
+    // Gateway шлёт unified payload: { id, messageId, chatId, transcript, sttStatus, transcriptStatus }
+    const handleMessageTranscribed = (data: {
       messageId: number;
       chatId: number;
-      transcript?: string;
+      transcript?: string | null;
       sttStatus?: string;
       transcriptStatus?: string;
     }) => {
       if (Number(data.chatId) !== chatIdNum) return;
-      const status =
-        data.transcriptStatus ??
-        (data.sttStatus === 'pending'
-          ? 'processing'
-          : data.sttStatus === 'none'
-            ? 'skipped'
-            : data.sttStatus);
+      const status = mapSttStatus(data.transcriptStatus ?? data.sttStatus);
 
       setMessages((prev) =>
         prev.map((m) =>
@@ -164,34 +159,32 @@ const handleMessageTranscribed = (data: {
             ? {
                 ...m,
                 transcript: data.transcript ?? m.transcript,
-                transcriptStatus: (status as any) ?? m.transcriptStatus,
+                transcriptStatus: status,
               }
             : m
         )
       );
     };
 
+    // Gateway шлёт unified payload: { id, messageId, chatId, voiceSummary, summary, summaryStatus }
     const handleMessageVoiceSummary = (data: {
       messageId: number;
       chatId: number;
-      summary?: string;
+      summary?: string | null;
+      voiceSummary?: string | null;
       summaryStatus?: string;
     }) => {
       if (Number(data.chatId) !== chatIdNum) return;
-      const status =
-        data.summaryStatus === 'none'
-          ? 'not_needed'
-          : data.summaryStatus === 'pending'
-            ? 'processing'
-            : data.summaryStatus;
+      const status = mapSummaryStatus(data.summaryStatus);
+      const summary = data.summary ?? data.voiceSummary ?? null;
 
       setMessages((prev) =>
         prev.map((m) =>
           m.id === data.messageId
             ? {
                 ...m,
-                summary: data.summary ?? m.summary,
-                summaryStatus: (status as any) ?? m.summaryStatus,
+                summary: summary ?? m.summary,
+                summaryStatus: status,
               }
             : m
         )
@@ -216,11 +209,8 @@ const handleMessageTranscribed = (data: {
 
     socket.on('new_message', handleNewMessage);
     socket.on('message_translated', handleMessageTranslated);
-    // оба варианта имён (gateway может слать с _ или .)
     socket.on('message_transcribed', handleMessageTranscribed);
-    socket.on('message.transcribed', handleMessageTranscribed);
     socket.on('message_voice_summary', handleMessageVoiceSummary);
-    socket.on('message.voice_summary', handleMessageVoiceSummary);
     socket.on('message_updated', handleMessageUpdated);
     socket.on('message_deleted', handleMessageDeleted);
 
@@ -229,9 +219,7 @@ const handleMessageTranscribed = (data: {
       socket.off('new_message', handleNewMessage);
       socket.off('message_translated', handleMessageTranslated);
       socket.off('message_transcribed', handleMessageTranscribed);
-      socket.off('message.transcribed', handleMessageTranscribed);
       socket.off('message_voice_summary', handleMessageVoiceSummary);
-      socket.off('message.voice_summary', handleMessageVoiceSummary);
       socket.off('message_updated', handleMessageUpdated);
       socket.off('message_deleted', handleMessageDeleted);
     };
