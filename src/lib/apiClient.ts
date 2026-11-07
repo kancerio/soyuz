@@ -188,7 +188,6 @@ export const apiClient = {
 
   getUsers: () => request<User[]>('/users'),
 
-  // Chats — только backend, без mockGroupStore
   getChats: () => request<Chat[]>('/chats'),
 
   getChat: (id: number) => request<Chat>(`/chats/${id}`),
