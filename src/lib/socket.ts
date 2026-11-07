@@ -12,8 +12,12 @@ export function initSocket(userId: number): Socket {
     socket.connect();
     socket.on('connect', () => {
       console.log('Socket connected');
-      socket?.emit('auth', { userId });
+      // Gateway в проде требует JWT (userId принимается только в тестовом окружении)
+      const token =
+        typeof window !== 'undefined' ? sessionStorage.getItem('accessToken') : null;
+      socket?.emit('auth', token ? { token } : { userId });
     });
+    socket.on('auth_error', (err) => console.error('Socket auth error:', err));
     socket.on('connect_error', (err) => console.error('Socket error:', err));
     socket.on('disconnect', () => console.log('Socket disconnected'));
   }
