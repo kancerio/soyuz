@@ -324,7 +324,7 @@ describe('Интеграционные тесты (Задача 6)', () => {
         new Error('STT Service Timeout / 503 Service Unavailable'),
       );
 
-      const audioBuffer = Buffer.from('AUDIO_BYTES_FAIL_SCENARIO');
+      const audioBuffer = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x00, 0x00, 0x1f, 0x42, 0x86, 0x81, 0x01, 0x42, 0xf7, 0x81, 0x01]);
       const mockFile: any = {
         buffer: audioBuffer,
         size: audioBuffer.length,

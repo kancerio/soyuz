@@ -23,6 +23,8 @@ import { AssistDto } from './dto/assist.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { EditMessageDto } from './dto/edit-message.dto';
 import { ChatSummaryDto } from './dto/chat-summary.dto';
+import { TranslateDto } from './dto/translate.dto';
+import { SummaryDto } from './dto/summary.dto';
 
 @Controller('messages')
 @UseGuards(AuthGuard('jwt'))

@@ -357,17 +357,21 @@ export class TranslationService {
       return failed;
     }
 
+    const conversationText = messages
+      .map((m) => `${m.sender_id}: ${m.text.trim()}`)
+      .join('\n');
+
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
         let response;
         try {
-          // Согласованный контракт: POST /summary { text }
+          // Согласованный контракт: POST /summary { messages, language, text }
           response = await firstValueFrom(
             this.httpService.post(
               `${this.aiBaseUrl}/summary`,
               {
-                messages: [{ sender_id: 'user', text: trimmed }],
-                language: 'ru',
+                messages,
+                language: language || 'ru',
               },
               { timeout: this.timeoutMs },
             ),
@@ -378,7 +382,7 @@ export class TranslationService {
             response = await firstValueFrom(
               this.httpService.post(
                 `${this.aiBaseUrl}/secretary`,
-                { action: 'summary', details: trimmed },
+                { action: 'summary', details: conversationText },
                 { timeout: this.timeoutMs },
               ),
             );
@@ -387,10 +391,11 @@ export class TranslationService {
           }
         }
 
+        const data = response.data || {};
         const summary =
-          response.data.summary ||
-          response.data.result ||
-          response.data.message ||
+          data.summary ||
+          data.result ||
+          data.message ||
           '';
 
         return {

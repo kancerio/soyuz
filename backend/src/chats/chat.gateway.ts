@@ -595,15 +595,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     messageId: number;
     chatId: number;
     transcript: string;
-    transcriptStatus: string;
+    sttStatus?: string;
+    transcriptStatus?: string;
   }) {
+    const status = payload.sttStatus || payload.transcriptStatus || 'completed';
     const unifiedPayload = {
       id: payload.messageId,
       messageId: payload.messageId,
       chatId: payload.chatId,
       transcript: payload.transcript,
-      sttStatus: payload.sttStatus,
-      transcriptStatus: payload.sttStatus,
+      sttStatus: status,
+      transcriptStatus: status,
     };
     this.server.to(`chat_${payload.chatId}`).emit('message_transcribed', unifiedPayload);
 
@@ -611,7 +613,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       event: 'message_transcribed',
       message_id: payload.messageId,
       chat_id: payload.chatId,
-      transcript_status: payload.transcriptStatus,
+      transcript_status: status,
       timestamp: new Date().toISOString(),
     });
   }
@@ -620,16 +622,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleMessageVoiceSummary(payload: {
     messageId: number;
     chatId: number;
-    summary: string;
+    summary?: string;
+    voiceSummary?: string;
     summaryStatus: string;
   }) {
-    const mappedStatus = payload.summaryStatus === 'skipped' ? 'not_needed' : payload.summaryStatus;
+    const summaryText = payload.voiceSummary ?? payload.summary ?? '';
+    const rawStatus = payload.summaryStatus;
+    const mappedStatus = rawStatus === 'skipped' ? 'not_needed' : rawStatus;
+
     const unifiedPayload = {
       id: payload.messageId,
       messageId: payload.messageId,
       chatId: payload.chatId,
-      voiceSummary: payload.voiceSummary,
-      summary: payload.voiceSummary,
+      voiceSummary: summaryText,
+      summary: summaryText,
       summaryStatus: mappedStatus,
     };
     this.server.to(`chat_${payload.chatId}`).emit('message_voice_summary', unifiedPayload);
@@ -638,7 +644,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       event: 'message_voice_summary',
       message_id: payload.messageId,
       chat_id: payload.chatId,
-      summary_status: payload.summaryStatus,
+      summary_status: mappedStatus,
       timestamp: new Date().toISOString(),
     });
   }

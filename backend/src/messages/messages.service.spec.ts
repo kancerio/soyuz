@@ -209,7 +209,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
 
   describe('Voice Messages (Задача 2)', () => {
     const validAudioFile: any = {
-      buffer: Buffer.from('FAKE_AUDIO_DATA_FOR_TESTING'),
+      buffer: Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x00, 0x00, 0x1f, 0x42, 0x86, 0x81, 0x01, 0x42, 0xf7, 0x81, 0x01]),
       mimetype: 'audio/webm',
       size: 28,
       originalname: 'voice.webm',

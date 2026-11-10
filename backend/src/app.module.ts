@@ -21,7 +21,7 @@ import { TranslationModule } from './translation/translation.module';
         type: 'postgres',
         host: configService.get('DB_HOST', 'localhost'),
         port: parseInt(configService.get('DB_PORT', '5432'), 10),
-        username: configService.get('DB_USERNAME', 'postgres'),
+        username: configService.get('DB_USERNAME', 'messenger'),
         password: configService.get('DB_PASSWORD', 'secretpassword'),
         database: configService.get('DB_DATABASE', 'messenger_db'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],

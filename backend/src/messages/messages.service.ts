@@ -48,10 +48,7 @@ export function isValidAudioMagicBytes(buffer: Buffer): boolean {
   if (!buffer || buffer.length < 4) return false;
 
   // Тестовые моки в юнит/интеграционных тестах
-  const headStr = buffer.toString('utf8', 0, 16);
-  if (headStr.startsWith('FAKE_AUDIO') || headStr.startsWith('AUDIO_BYTES') || headStr.startsWith('RIFF')) {
-    return true;
-  }
+  // Валидация сигнатур реальных аудиоформатов
 
   // 1. WAV: начинается с "RIFF"
   if (
@@ -473,14 +470,14 @@ export class MessagesService {
           messageId,
           chatId,
           transcript: sttResult.transcript,
+          sttStatus: 'completed',
           transcriptStatus: 'completed',
         });
 
-        // 2. Генерация краткого резюме (Summary) без шаблонного STT summary
+        // 2. Генерация краткого резюме (Summary)
         try {
           const cleanTranscript = sttResult.transcript.trim();
 
-          // Правило пропуска краткого содержания для коротких сообщений (< 50 символов)
           if (cleanTranscript.length < 50) {
             await this.messagesRepository.update(messageId, {
               voiceSummary: null,
@@ -491,10 +488,10 @@ export class MessagesService {
               messageId,
               chatId,
               voiceSummary: null,
+              summary: '',
               summaryStatus: 'skipped',
             });
           } else {
-            // Вызываем реальный AI API generateSummary
             const sumResult = await this.translationService.generateSummary(cleanTranscript);
             const isCompleted = sumResult.status === 'completed';
             const finalSummary = isCompleted ? sumResult.summary : null;
@@ -509,21 +506,21 @@ export class MessagesService {
               messageId,
               chatId,
               voiceSummary: finalSummary,
+              summary: finalSummary || '',
               summaryStatus: finalStatus,
             });
           }
         } catch (sumErr) {
-          // Ошибка summary не повреждает transcript и само сообщение
           await this.messagesRepository.update(messageId, { summaryStatus: 'failed' });
           this.eventEmitter.emit('message.voice_summary', {
             messageId,
             chatId,
+            voiceSummary: null,
             summary: '',
             summaryStatus: 'failed',
           });
         }
       } else {
-        // Ошибка STT — сохраняем статус failed, сообщение доступно
         await this.messagesRepository.update(messageId, {
           sttStatus: 'failed',
           summaryStatus: 'failed',
@@ -533,12 +530,14 @@ export class MessagesService {
           messageId,
           chatId,
           transcript: '',
+          sttStatus: 'failed',
           transcriptStatus: 'failed',
         });
 
         this.eventEmitter.emit('message.voice_summary', {
           messageId,
           chatId,
+          voiceSummary: null,
           summary: '',
           summaryStatus: 'failed',
         });
@@ -554,12 +553,14 @@ export class MessagesService {
         messageId,
         chatId: chatId || 0,
         transcript: '',
+        sttStatus: 'failed',
         transcriptStatus: 'failed',
       });
 
       this.eventEmitter.emit('message.voice_summary', {
         messageId,
         chatId: chatId || 0,
+        voiceSummary: null,
         summary: '',
         summaryStatus: 'failed',
       });
