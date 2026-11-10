@@ -47,6 +47,9 @@ module.exports = {
         'fade-in': 'fadeIn 0.2s ease-out',
         'slide-up': 'slideUp 0.2s ease-out',
         'slide-in-right': 'slideInRight 0.25s ease-out',
+        'message-in': 'messageIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+        'record-pulse': 'recordPulse 1.5s ease-in-out infinite',
+        'wave-bar': 'waveBar 0.8s ease-in-out infinite alternate',
       },
       keyframes: {
         fadeIn: {
@@ -60,6 +63,18 @@ module.exports = {
         slideInRight: {
           '0%': { opacity: '0', transform: 'translateX(16px)' },
           '100%': { opacity: '1', transform: 'translateX(0)' },
+        },
+        messageIn: {
+          '0%': { opacity: '0', transform: 'translateY(12px) scale(0.98)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+        recordPulse: {
+          '0%, 100%': { transform: 'scale(1)', opacity: '1' },
+          '50%': { transform: 'scale(1.25)', opacity: '0.6' },
+        },
+        waveBar: {
+          '0%': { height: '6px' },
+          '100%': { height: '24px' },
         },
       },
     },

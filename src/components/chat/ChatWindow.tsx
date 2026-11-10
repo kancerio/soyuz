@@ -919,7 +919,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
             return (
               <div
                 key={msg.id}
-                className={`flex items-end gap-2 group ${isOwn ? 'justify-end' : 'justify-start'}`}
+                className={`flex items-end gap-2 group animate-message-in ${isOwn ? 'justify-end' : 'justify-start'}`}
               >
                 {/* Аватар отправителя (если чужое сообщение) */}
                 {!isOwn && (
@@ -1174,7 +1174,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       {/* Правая панель: Информация о группе / собеседнике (Third) */}
       {/* ========================================================= */}
       {showDetailsSidebar && (
-        <aside className="w-80 h-full bg-white dark:bg-[#111640] border-l border-[#dde4f0] dark:border-[#1e2955] flex flex-col overflow-y-auto animate-slide-in-right shrink-0 select-none">
+        <aside className="fixed inset-y-0 right-0 z-40 w-full sm:w-80 h-full bg-white dark:bg-[#111640] border-l border-[#dde4f0] dark:border-[#1e2955] flex flex-col overflow-y-auto animate-slide-in-right shrink-0 select-none shadow-2xl md:static md:z-auto">
           {/* Шапка сайдбара */}
           <div className="p-4 border-b border-[#dde4f0] dark:border-[#1e2955] flex items-center justify-between">
             <h3 className="font-semibold text-sm">Информация о чате</h3>
