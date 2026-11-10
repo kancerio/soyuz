@@ -63,7 +63,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const isSettingsActive = pathname === '/settings';
 
   return (
-    <div className="flex flex-col md:flex-row h-screen w-screen overflow-hidden bg-[#f0f4ff] dark:bg-[#0b1026]">
+    <div className="flex flex-col md:flex-row h-screen w-full max-w-full overflow-hidden bg-[#f0f4ff] dark:bg-[#0b1026]">
       {/* ========================================================= */}
       {/* Desktop левая узкая навигационная панель (макет Союз)   */}
       {/* ========================================================= */}
@@ -159,7 +159,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       {/* ========================================================= */}
       {/* Основная рабочая область контента                         */}
       {/* ========================================================= */}
-      <main className="flex-1 flex overflow-hidden relative" key={refreshKey}>
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden relative" key={refreshKey}>
         {children}
       </main>
 

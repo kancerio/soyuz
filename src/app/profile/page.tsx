@@ -6,7 +6,7 @@ import ProfileForm from '@/components/profile/ProfileForm';
 export default function ProfilePage() {
   return (
     <MainLayout>
-      <div className="w-full h-full overflow-y-auto flex items-center justify-center p-4 sm:p-6 bg-gradient-to-b from-[#eef4ff] to-[#f7f9ff] dark:from-[#0b1026] dark:to-[#0f1535]">
+      <div className="w-full min-w-0 h-full overflow-y-auto flex items-start sm:items-center justify-center p-4 sm:p-6 bg-gradient-to-b from-[#eef4ff] to-[#f7f9ff] dark:from-[#0b1026] dark:to-[#0f1535]">
         <ProfileForm />
       </div>
     </MainLayout>

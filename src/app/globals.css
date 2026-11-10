@@ -71,6 +71,8 @@
   html {
     @apply antialiased;
     scroll-behavior: smooth;
+    overflow-x: hidden;
+    max-width: 100vw;
   }
 
   body {

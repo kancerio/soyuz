@@ -3,8 +3,7 @@
 import { useState } from 'react';
 import { useUser } from '@/context/UserContext';
 import { useLanguage } from '@/context/LanguageContext';
-import ThemeToggle from '@/components/ui/ThemeToggle';
-import Avatar from '@/components/ui/Avatar';
+import { Avatar, Card, Toggle, ThemeToggle } from '@/components/ui';
 import Link from 'next/link';
 
 type SettingsCategory =
@@ -24,26 +23,22 @@ export default function SettingsForm() {
   // Локальные состояния приватности
   const [showLastSeen, setShowLastSeen] = useState(user?.privacySettings?.showLastSeen ?? true);
   const [showReadReceipts, setShowReadReceipts] = useState(user?.privacySettings?.showReadReceipts ?? true);
-  const [notifications, setNotifications] = useState(true);
-  const [sounds, setSounds] = useState(true);
 
-  const toggleLastSeen = () => {
+  const toggleLastSeen = (checked: boolean) => {
     if (!user) return;
-    const nextVal = !showLastSeen;
-    setShowLastSeen(nextVal);
+    setShowLastSeen(checked);
     updateUser({
       ...user,
-      privacySettings: { ...user.privacySettings, showLastSeen: nextVal },
+      privacySettings: { ...user.privacySettings, showLastSeen: checked },
     });
   };
 
-  const toggleReadReceipts = () => {
+  const toggleReadReceipts = (checked: boolean) => {
     if (!user) return;
-    const nextVal = !showReadReceipts;
-    setShowReadReceipts(nextVal);
+    setShowReadReceipts(checked);
     updateUser({
       ...user,
-      privacySettings: { ...user.privacySettings, showReadReceipts: nextVal },
+      privacySettings: { ...user.privacySettings, showReadReceipts: checked },
     });
   };
 
@@ -55,7 +50,7 @@ export default function SettingsForm() {
       {/* Левая колонка категорий настроек                          */}
       {/* ========================================================= */}
       <div className="w-full lg:w-80 border-b lg:border-b-0 lg:border-r border-[#dde4f0] dark:border-[#1e2955] bg-white/70 dark:bg-[#111640]/80 p-4 space-y-2 shrink-0 overflow-y-auto">
-        <h1 className="text-xl font-bold tracking-tight text-[#1a2038] dark:text-white px-3 py-2">
+        <h1 className="text-xl font-bold tracking-tight text-[#1a2038] dark:text-[#e8ecf4] px-3 py-2">
           Настройки
         </h1>
 
@@ -217,16 +212,16 @@ export default function SettingsForm() {
       </div>
 
       {/* ========================================================= */}
-      {/* Правая колонка: Детали раздела (по макету Союз)          */}
+      {/* Правая колонка: Детали раздела                            */}
       {/* ========================================================= */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-[#f0f4ff] dark:bg-[#0b1026]">
+      <div className="flex-1 min-w-0 max-w-full overflow-y-auto p-4 sm:p-8 bg-[#f0f4ff] dark:bg-[#0b1026]">
         <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
           {/* Верхняя карточка выбранного аккаунта */}
-          <div className="p-6 rounded-3xl bg-white dark:bg-[#111640] border border-[#dde4f0] dark:border-[#1e2955] shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+          <Card variant="default" padding="md" className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <Avatar name={user.name || user.email} src={user.avatar} size="xl" />
+              <Avatar name={user.name || user.email} src={user.avatar} size="xl" isOnline={true} />
               <div>
-                <h2 className="text-lg font-bold text-[#1a2038] dark:text-white">
+                <h2 className="text-lg font-bold text-[#1a2038] dark:text-[#e8ecf4]">
                   {user.name || 'Пользователь'}
                 </h2>
                 <p className="text-xs text-[#6070a0] dark:text-[#7b8db5] mt-0.5">
@@ -237,33 +232,33 @@ export default function SettingsForm() {
 
             <Link
               href="/profile"
-              className="px-4 py-2 text-xs font-semibold rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400 transition-colors flex items-center gap-1.5"
+              className="px-4 py-2 text-xs font-semibold rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400 transition-colors flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
               </svg>
               <span>Редактировать</span>
             </Link>
-          </div>
+          </Card>
 
           {/* Карточка детальных параметров */}
-          <div className="p-6 rounded-3xl bg-white dark:bg-[#111640] border border-[#dde4f0] dark:border-[#1e2955] shadow-sm space-y-4">
+          <Card variant="default" padding="lg" className="space-y-4">
             <div className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800">
-              <span className="text-sm font-medium text-[#1a2038] dark:text-white">
+              <span className="text-sm font-medium text-[#1a2038] dark:text-[#e8ecf4]">
                 Номер телефона
               </span>
               <span className="text-sm text-gray-400">+7 900 123-45-67 ›</span>
             </div>
 
             <div className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800">
-              <span className="text-sm font-medium text-[#1a2038] dark:text-white">
+              <span className="text-sm font-medium text-[#1a2038] dark:text-[#e8ecf4]">
                 Страна
               </span>
-              <span className="text-sm text-gray-400">{user.country || 'Не указана'} ›</span>
+              <span className="text-sm text-gray-400">{user.country || 'Россия'} ›</span>
             </div>
 
             <div className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800">
-              <span className="text-sm font-medium text-[#1a2038] dark:text-white">
+              <span className="text-sm font-medium text-[#1a2038] dark:text-[#e8ecf4]">
                 Язык перевода
               </span>
               <span className="text-sm text-blue-500 font-semibold uppercase">
@@ -272,7 +267,7 @@ export default function SettingsForm() {
             </div>
 
             <div className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800">
-              <span className="text-sm font-medium text-[#1a2038] dark:text-white">
+              <span className="text-sm font-medium text-[#1a2038] dark:text-[#e8ecf4]">
                 Тема оформления
               </span>
               <div className="flex items-center gap-2">
@@ -280,54 +275,24 @@ export default function SettingsForm() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800">
-              <div>
-                <p className="text-sm font-medium text-[#1a2038] dark:text-white">
-                  Показывать последнее посещение
-                </p>
-                <p className="text-xs text-[#6070a0] dark:text-[#7b8db5]">
-                  Другие пользователи будут видеть, когда вы были в сети
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={toggleLastSeen}
-                className={`w-11 h-6 rounded-full transition-colors relative focus:outline-none ${
-                  showLastSeen ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'
-                }`}
-              >
-                <span
-                  className={`block w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
-                    showLastSeen ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
+            <div className="py-2 border-b border-gray-100 dark:border-gray-800">
+              <Toggle
+                label="Показывать последнее посещение"
+                description="Другие пользователи будут видеть, когда вы были в сети"
+                checked={showLastSeen}
+                onChange={toggleLastSeen}
+              />
             </div>
 
-            <div className="flex items-center justify-between py-2">
-              <div>
-                <p className="text-sm font-medium text-[#1a2038] dark:text-white">
-                  Уведомлять о прочтении сообщений
-                </p>
-                <p className="text-xs text-[#6070a0] dark:text-[#7b8db5]">
-                  Показывать, когда вы прочитали входящее сообщение
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={toggleReadReceipts}
-                className={`w-11 h-6 rounded-full transition-colors relative focus:outline-none ${
-                  showReadReceipts ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'
-                }`}
-              >
-                <span
-                  className={`block w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
-                    showReadReceipts ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
+            <div className="py-2">
+              <Toggle
+                label="Уведомлять о прочтении сообщений"
+                description="Показывать, когда вы прочитали входящее сообщение"
+                checked={showReadReceipts}
+                onChange={toggleReadReceipts}
+              />
             </div>
-          </div>
+          </Card>
 
           {/* Карточка Выхода из аккаунта */}
           <div
