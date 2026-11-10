@@ -595,17 +595,26 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     messageId: number;
     chatId: number;
     transcript: string;
-    sttStatus?: string;
     transcriptStatus?: string;
+    sttStatus?: string;
   }) {
-    const status = payload.sttStatus || payload.transcriptStatus || 'completed';
+    const rawStatus = payload.transcriptStatus || payload.sttStatus;
+    let status: 'completed' | 'failed' | 'not_needed' = 'completed';
+    if (rawStatus === 'failed') {
+      status = 'failed';
+    } else if (rawStatus === 'not_needed' || rawStatus === 'skipped' || rawStatus === 'none') {
+      status = 'not_needed';
+    } else {
+      status = 'completed';
+    }
+
     const unifiedPayload = {
-      id: payload.messageId,
       messageId: payload.messageId,
       chatId: payload.chatId,
-      transcript: payload.transcript,
-      sttStatus: status,
+      transcript: payload.transcript ?? '',
       transcriptStatus: status,
+      id: payload.messageId,
+      sttStatus: status,
     };
     this.server.to(`chat_${payload.chatId}`).emit('message_transcribed', unifiedPayload);
 
@@ -626,17 +635,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     voiceSummary?: string;
     summaryStatus: string;
   }) {
-    const summaryText = payload.voiceSummary ?? payload.summary ?? '';
+    const summaryText = payload.summary ?? payload.voiceSummary ?? '';
     const rawStatus = payload.summaryStatus;
-    const mappedStatus = rawStatus === 'skipped' ? 'not_needed' : rawStatus;
+    let mappedStatus: 'completed' | 'failed' | 'not_needed' = 'failed';
+    if (rawStatus === 'completed') {
+      mappedStatus = 'completed';
+    } else if (rawStatus === 'not_needed' || rawStatus === 'skipped' || rawStatus === 'none') {
+      mappedStatus = 'not_needed';
+    } else {
+      mappedStatus = 'failed';
+    }
 
     const unifiedPayload = {
-      id: payload.messageId,
       messageId: payload.messageId,
       chatId: payload.chatId,
-      voiceSummary: summaryText,
       summary: summaryText,
       summaryStatus: mappedStatus,
+      id: payload.messageId,
+      voiceSummary: summaryText,
     };
     this.server.to(`chat_${payload.chatId}`).emit('message_voice_summary', unifiedPayload);
 

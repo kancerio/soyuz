@@ -4,7 +4,7 @@ import { Chat } from '../chats/chat.entity';
 
 export type TranslateStatus = 'pending' | 'completed' | 'failed' | 'skipped' | 'none';
 export type SttStatus = 'pending' | 'completed' | 'failed' | 'none';
-export type SummaryStatus = 'pending' | 'completed' | 'failed' | 'skipped' | 'none';
+export type SummaryStatus = 'pending' | 'completed' | 'failed' | 'skipped' | 'not_needed' | 'none';
 
 @Entity('messages')
 export class Message {
@@ -90,6 +90,9 @@ export class Message {
   @Column({ type: 'varchar', length: 20, default: 'none' })
   summaryStatus: SummaryStatus;
   // ========================================================
+
+  // Виртуальное поле URL голосового сообщения (не колонка БД)
+  voiceUrl?: string | null;
 
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;

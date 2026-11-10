@@ -1,3 +1,4 @@
+const VALID_AUDIO_FIXTURE = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x00, 0x00, 0x1f, 0x42, 0x86, 0x81, 0x01, 0x42, 0xf7, 0x81, 0x01]);
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ForbiddenException, NotFoundException, BadRequestException, BadGatewayException, GatewayTimeoutException } from '@nestjs/common';
@@ -299,7 +300,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
       const fs = require('fs');
       const path = require('path');
       const tmpFile = path.join(process.cwd(), 'temp_test_audio.webm');
-      fs.writeFileSync(tmpFile, 'FAKE_AUDIO');
+      fs.writeFileSync(tmpFile, VALID_AUDIO_FIXTURE);
 
       try {
         await service.processVoiceInBackground(101, tmpFile, 'audio/webm', 'ru');
@@ -349,7 +350,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
       const fs = require('fs');
       const path = require('path');
       const tmpFile = path.join(process.cwd(), 'temp_test_audio_fail.webm');
-      fs.writeFileSync(tmpFile, 'FAKE_AUDIO');
+      fs.writeFileSync(tmpFile, VALID_AUDIO_FIXTURE);
 
       try {
         await service.processVoiceInBackground(101, tmpFile, 'audio/webm', 'ru');
@@ -383,7 +384,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
       const fs = require('fs');
       const path = require('path');
       const tmpFile = path.join(process.cwd(), 'temp_test_short.webm');
-      fs.writeFileSync(tmpFile, 'FAKE_AUDIO');
+      fs.writeFileSync(tmpFile, VALID_AUDIO_FIXTURE);
 
       try {
         await service.processVoiceInBackground(101, tmpFile, 'audio/webm', 'ru');
@@ -399,7 +400,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
           101,
           expect.objectContaining({
             voiceSummary: null,
-            summaryStatus: 'skipped',
+            summaryStatus: 'not_needed',
           }),
         );
         expect(mockEventEmitter.emit).toHaveBeenCalledWith(
@@ -407,7 +408,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
           expect.objectContaining({
             messageId: 101,
             voiceSummary: null,
-            summaryStatus: 'skipped',
+            summaryStatus: 'not_needed',
           }),
         );
         // generateSummary не должен вызываться для коротких фраз
@@ -464,7 +465,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
       const fs = require('fs');
       const path = require('path');
       const tmpFile = path.join(process.cwd(), 'temp_test_summary_fail.webm');
-      fs.writeFileSync(tmpFile, 'FAKE_AUDIO');
+      fs.writeFileSync(tmpFile, VALID_AUDIO_FIXTURE);
 
       try {
         await service.processVoiceInBackground(101, tmpFile, 'audio/webm', 'ru');
@@ -487,4 +488,26 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
       }
     });
   });
+  describe('markAsDelivered & markAsRead - проверка прав доступа (Задача спринта)', () => {
+    it('должен блокировать markAsDelivered для неучастника чата (403 Forbidden)', async () => {
+      mockMessagesRepository.findOne.mockResolvedValueOnce({
+        id: 10,
+        chatId: 1,
+        userId: 20,
+      });
+
+      await expect(service.markAsDelivered(10, 999)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('должен блокировать markAsRead для неучастника чата (403 Forbidden)', async () => {
+      mockMessagesRepository.findOne.mockResolvedValueOnce({
+        id: 10,
+        chatId: 1,
+        userId: 20,
+      });
+
+      await expect(service.markAsRead(10, 999)).rejects.toThrow(ForbiddenException);
+    });
+  });
+
 });

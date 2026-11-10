@@ -158,6 +158,16 @@ async assist(@Body() body: AssistDto) {
     );
   }
 
+    @Put(':messageId/delivered')
+  async markAsDelivered(@Request() req, @Param('messageId') messageId: string) {
+    return this.messagesService.markAsDelivered(+messageId, req.user.userId);
+  }
+
+  @Put(':messageId/read')
+  async markAsRead(@Request() req, @Param('messageId') messageId: string) {
+    return this.messagesService.markAsRead(+messageId, req.user.userId);
+  }
+
   @Put(':messageId')
   async editMessage(
     @Request() req,

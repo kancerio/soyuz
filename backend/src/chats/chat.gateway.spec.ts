@@ -102,8 +102,8 @@ describe('ChatGateway - Realtime Unified Events (Задача 1)', () => {
     });
   });
 
-  describe('События STT и Summary для участников чата (Задача 5)', () => {
-    it('handleMessageTranscribed должен отправлять message_transcribed в комнату чата', () => {
+  describe('События STT и Summary для участников чата (WebSocket-контракты)', () => {
+    it('handleMessageTranscribed должен отправлять message_transcribed (messageId, chatId, transcript, transcriptStatus)', () => {
       const payload = {
         messageId: 42,
         chatId: 7,
@@ -115,10 +115,37 @@ describe('ChatGateway - Realtime Unified Events (Задача 1)', () => {
 
       expect(mockServer.to).toHaveBeenCalledWith('chat_7');
       const roomEmitter = mockServer.to('chat_7');
-      expect(roomEmitter.emit).toHaveBeenCalledWith('message_transcribed', expect.objectContaining({ id: 42, messageId: 42, chatId: 7, transcript: 'Привет, это расшифровка', sttStatus: 'completed' }));
+      expect(roomEmitter.emit).toHaveBeenCalledWith(
+        'message_transcribed',
+        expect.objectContaining({
+          messageId: 42,
+          chatId: 7,
+          transcript: 'Привет, это расшифровка',
+          transcriptStatus: 'completed',
+        }),
+      );
     });
 
-    it('handleMessageVoiceSummary должен отправлять message_voice_summary в комнату чата', () => {
+    it('handleMessageTranscribed должен корректно обрабатывать failed статус', () => {
+      gateway.handleMessageTranscribed({
+        messageId: 43,
+        chatId: 7,
+        transcript: '',
+        transcriptStatus: 'failed',
+      });
+
+      const roomEmitter = mockServer.to('chat_7');
+      expect(roomEmitter.emit).toHaveBeenCalledWith(
+        'message_transcribed',
+        expect.objectContaining({
+          messageId: 43,
+          chatId: 7,
+          transcriptStatus: 'failed',
+        }),
+      );
+    });
+
+    it('handleMessageVoiceSummary должен отправлять message_voice_summary (messageId, chatId, summary, summaryStatus)', () => {
       const payload = {
         messageId: 42,
         chatId: 7,
@@ -130,7 +157,63 @@ describe('ChatGateway - Realtime Unified Events (Задача 1)', () => {
 
       expect(mockServer.to).toHaveBeenCalledWith('chat_7');
       const roomEmitter = mockServer.to('chat_7');
-      expect(roomEmitter.emit).toHaveBeenCalledWith('message_voice_summary', expect.objectContaining({ id: 42, messageId: 42, chatId: 7, voiceSummary: 'Краткая выжимка', summary: 'Краткая выжимка', summaryStatus: 'completed' }));
+      expect(roomEmitter.emit).toHaveBeenCalledWith(
+        'message_voice_summary',
+        expect.objectContaining({
+          messageId: 42,
+          chatId: 7,
+          summary: 'Краткая выжимка',
+          summaryStatus: 'completed',
+        }),
+      );
+    });
+
+    it('handleMessageVoiceSummary должен корректно обрабатывать completed, failed и not_needed (в т.ч. skipped)', () => {
+      // not_needed
+      gateway.handleMessageVoiceSummary({
+        messageId: 44,
+        chatId: 7,
+        summary: '',
+        summaryStatus: 'not_needed',
+      });
+      let roomEmitter = mockServer.to('chat_7');
+      expect(roomEmitter.emit).toHaveBeenCalledWith(
+        'message_voice_summary',
+        expect.objectContaining({
+          messageId: 44,
+          summaryStatus: 'not_needed',
+        }),
+      );
+
+      // skipped -> not_needed
+      gateway.handleMessageVoiceSummary({
+        messageId: 45,
+        chatId: 7,
+        summary: '',
+        summaryStatus: 'skipped',
+      });
+      expect(roomEmitter.emit).toHaveBeenCalledWith(
+        'message_voice_summary',
+        expect.objectContaining({
+          messageId: 45,
+          summaryStatus: 'not_needed',
+        }),
+      );
+
+      // failed
+      gateway.handleMessageVoiceSummary({
+        messageId: 46,
+        chatId: 7,
+        summary: '',
+        summaryStatus: 'failed',
+      });
+      expect(roomEmitter.emit).toHaveBeenCalledWith(
+        'message_voice_summary',
+        expect.objectContaining({
+          messageId: 46,
+          summaryStatus: 'failed',
+        }),
+      );
     });
   });
 

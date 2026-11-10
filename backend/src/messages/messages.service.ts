@@ -328,6 +328,10 @@ export class MessagesService {
 
   async markAsDelivered(messageId: number, userId: number): Promise<Message> {
     const message = await this.getMessage(messageId);
+    const isParticipant = await this.chatsService.isParticipant(message.chatId, userId);
+    if (!isParticipant) {
+      throw new ForbiddenException('Вы не являетесь участником этого чата');
+    }
 
     message.isDelivered = true;
     return this.messagesRepository.save(message);
@@ -335,6 +339,10 @@ export class MessagesService {
 
   async markAsRead(messageId: number, userId: number): Promise<Message> {
     const message = await this.getMessage(messageId);
+    const isParticipant = await this.chatsService.isParticipant(message.chatId, userId);
+    if (!isParticipant) {
+      throw new ForbiddenException('Вы не являетесь участником этого чата');
+    }
 
     message.isRead = true;
     message.readAt = new Date();
@@ -481,7 +489,7 @@ export class MessagesService {
           if (cleanTranscript.length < 50) {
             await this.messagesRepository.update(messageId, {
               voiceSummary: null,
-              summaryStatus: 'skipped',
+              summaryStatus: 'not_needed',
             });
 
             this.eventEmitter.emit('message.voice_summary', {
@@ -489,7 +497,7 @@ export class MessagesService {
               chatId,
               voiceSummary: null,
               summary: '',
-              summaryStatus: 'skipped',
+              summaryStatus: 'not_needed',
             });
           } else {
             const sumResult = await this.translationService.generateSummary(cleanTranscript);
