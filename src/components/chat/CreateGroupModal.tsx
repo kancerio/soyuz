@@ -33,10 +33,10 @@ export default function CreateGroupModal({ isOpen, onClose, onGroupCreated }: Cr
       apiClient.getUsers()
         .then(all => setUsers(all.filter(u => u.id !== user?.id)))
         .catch(() => setUsers([
-          { id: 2, name: 'Анна Петрова', username: 'anna_p', email: 'anna@soyuz.chat', country: 'Россия', language: 'ru', status: 'В сети' },
-          { id: 3, name: 'Максим Смирнов', username: 'max_smirnov', email: 'max@soyuz.chat', country: 'Россия', language: 'ru', status: 'Был недавно' },
-          { id: 4, name: 'Елена Васильева', username: 'elena_v', email: 'elena@soyuz.chat', country: 'Россия', language: 'ru', status: 'В сети' },
-          { id: 5, name: 'Дмитрий Козлов', username: 'dmitry_k', email: 'dmitry@soyuz.chat', country: 'Россия', language: 'ru', status: 'В сети' },
+          { id: 2, name: 'Анна Петрова', username: 'anna_p', email: 'anna@soyuz.chat', country: 'Россия', language: 'ru', status: 'В сети', privacySettings: { showLastSeen: true, showReadReceipts: true } },
+          { id: 3, name: 'Максим Смирнов', username: 'max_smirnov', email: 'max@soyuz.chat', country: 'Россия', language: 'ru', status: 'Был недавно', privacySettings: { showLastSeen: true, showReadReceipts: true } },
+          { id: 4, name: 'Елена Васильева', username: 'elena_v', email: 'elena@soyuz.chat', country: 'Россия', language: 'ru', status: 'В сети', privacySettings: { showLastSeen: true, showReadReceipts: true } },
+          { id: 5, name: 'Дмитрий Козлов', username: 'dmitry_k', email: 'dmitry@soyuz.chat', country: 'Россия', language: 'ru', status: 'В сети', privacySettings: { showLastSeen: true, showReadReceipts: true } },
         ]))
         .finally(() => setLoading(false));
     } else {
