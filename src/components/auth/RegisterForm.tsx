@@ -7,7 +7,7 @@ import { useUser } from '@/context/UserContext';
 import { Button, Input } from '@/components/ui';
 
 export default function RegisterForm() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { register } = useUser();
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -20,7 +20,7 @@ export default function RegisterForm() {
     setError('');
     setLoading(true);
     try {
-      await register(email, username, password);
+      await register(email, username, password, language);
     } catch (err: any) {
       if (err.message?.includes('Failed to fetch') || err.message?.includes('fetch')) {
         setError('Не удалось подключиться к серверу (localhost:3001). Убедитесь, что бэкенд запущен.');
@@ -35,7 +35,7 @@ export default function RegisterForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <Input
-        label="Электронная почта"
+        label={t('email_label')}
         type="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
@@ -49,7 +49,7 @@ export default function RegisterForm() {
       />
 
       <Input
-        label="Имя пользователя"
+        label={t('username_label')}
         type="text"
         value={username}
         onChange={(e) => setUsername(e.target.value)}
@@ -63,7 +63,7 @@ export default function RegisterForm() {
       />
 
       <Input
-        label="Пароль"
+        label={t('password_label')}
         type="password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
@@ -93,16 +93,16 @@ export default function RegisterForm() {
         isLoading={loading}
         className="mt-2 py-3"
       >
-        Создать аккаунт
+        {t('create_account')}
       </Button>
 
       <div className="pt-2 text-center">
         <div className="relative flex py-2 items-center">
           <div className="flex-grow border-t border-gray-200 dark:border-gray-800" />
           <span className="flex-shrink mx-3 text-xs text-gray-400">
-            Уже есть аккаунт?{' '}
+            {t('have_account')}{' '}
             <Link href="/login" className="text-blue-500 hover:text-blue-600 dark:hover:text-blue-400 font-medium">
-              Войти
+              {t('login_button')}
             </Link>
           </span>
           <div className="flex-grow border-t border-gray-200 dark:border-gray-800" />

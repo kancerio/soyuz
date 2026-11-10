@@ -36,7 +36,7 @@ export default function LoginForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <Input
-        label="Email или телефон"
+        label={t('email_label')}
         type="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
@@ -50,7 +50,7 @@ export default function LoginForm() {
       />
 
       <Input
-        label="Пароль"
+        label={t('password_label')}
         type="password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
@@ -80,16 +80,16 @@ export default function LoginForm() {
         isLoading={loading}
         className="mt-2 py-3"
       >
-        Войти в Союз
+        {t('login_button')}
       </Button>
 
       <div className="pt-2 text-center">
         <div className="relative flex py-2 items-center">
           <div className="flex-grow border-t border-gray-200 dark:border-gray-800" />
           <span className="flex-shrink mx-3 text-xs text-gray-400">
-            Нет аккаунта?{' '}
+            {t('no_account_yet')}{' '}
             <Link href="/register" className="text-blue-500 hover:text-blue-600 dark:hover:text-blue-400 font-medium">
-              Создать аккаунт
+              {t('create_account')}
             </Link>
           </span>
           <div className="flex-grow border-t border-gray-200 dark:border-gray-800" />

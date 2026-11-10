@@ -164,12 +164,18 @@ export const apiClient = {
     return response.blob();
   },
 
-  register: (data: { email: string; username: string; password: string }) =>
+  register: (data: { email: string; username: string; password: string; preferred_language?: string }) =>
     request<{
       accessToken: string;
       refreshToken: string;
       user: { id: number; email: string; username: string; language: string };
     }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+
+  updateLanguage: (language: string) =>
+    request<{ id: number; email: string; username: string; language: string }>(
+      '/users/language',
+      { method: 'PATCH', body: JSON.stringify({ language }) }
+    ),
 
   login: (data: { email: string; password: string }) =>
     request<{

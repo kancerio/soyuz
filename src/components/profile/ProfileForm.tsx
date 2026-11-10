@@ -6,8 +6,8 @@ import { useLanguage } from '@/context/LanguageContext';
 import { Avatar, Button, Input, Toggle, Card } from '@/components/ui';
 
 export default function ProfileForm() {
-  const { user, updateUser } = useUser();
-  const { t, setLanguage } = useLanguage();
+  const { user, updateUser, changeLanguage } = useUser();
+  const { t, setLanguage, language } = useLanguage();
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState(user);
   const [savedNotice, setSavedNotice] = useState(false);
@@ -52,11 +52,12 @@ export default function ProfileForm() {
     updateUser(updated);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData) return;
     updateUser(formData);
-    if (formData.language !== user?.language) {
+    if (formData.language) {
       setLanguage(formData.language as 'ru' | 'en');
+      await changeLanguage(formData.language as 'ru' | 'en');
     }
     setIsEditing(false);
     setSavedNotice(true);
@@ -72,7 +73,7 @@ export default function ProfileForm() {
     <div className="w-full max-w-[340px] sm:max-w-xl mx-auto animate-fade-in select-none">
       {savedNotice && (
         <div className="mb-4 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-fade-in">
-          <span>✓</span> Изменения профиля успешно сохранены
+          <span>✓</span> {t('profile_saved_success')}
         </div>
       )}
 
@@ -97,7 +98,7 @@ export default function ProfileForm() {
           </div>
 
           <h2 className="text-xl sm:text-2xl font-bold text-[#1a2038] dark:text-[#e8ecf4]">
-            {user.name || 'Пользователь Союза'}
+            {user.name || user.username || 'Пользователь Союза'}
           </h2>
           <p className="text-xs sm:text-sm text-[#6070a0] dark:text-[#7b8db5] mt-1 flex items-center gap-1.5">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -114,10 +115,10 @@ export default function ProfileForm() {
             <div className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800/60">
               <div className="flex items-center gap-3 text-xs sm:text-sm text-[#1a2038] dark:text-[#e8ecf4]">
                 <span className="text-base text-gray-400">📍</span>
-                <span>Страна</span>
+                <span>{t('country')}</span>
               </div>
               <span className="text-xs sm:text-sm text-[#6070a0] dark:text-[#7b8db5]">
-                {user.country || 'Россия'}
+                {user.country || (language === 'en' ? 'Russia' : 'Россия')}
               </span>
             </div>
 
@@ -125,10 +126,10 @@ export default function ProfileForm() {
             <div className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800/60">
               <div className="flex items-center gap-3 text-xs sm:text-sm text-[#1a2038] dark:text-[#e8ecf4]">
                 <span className="text-base text-gray-400">🌐</span>
-                <span>Язык интерфейса</span>
+                <span>{t('settings_app_lang')}</span>
               </div>
-              <span className="text-xs sm:text-sm text-[#6070a0] dark:text-[#7b8db5] font-medium">
-                {user.language === 'en' ? 'English' : 'Русский'}
+              <span className="text-xs sm:text-sm text-[#6070a0] dark:text-[#7b8db5] font-semibold uppercase">
+                {language === 'en' ? 'English (EN)' : 'Русский (RU)'}
               </span>
             </div>
 
@@ -136,18 +137,18 @@ export default function ProfileForm() {
             <div className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800/60">
               <div className="flex items-center gap-3 text-xs sm:text-sm text-[#1a2038] dark:text-[#e8ecf4]">
                 <span className="text-base text-gray-400">🕒</span>
-                <span>Сетевой статус</span>
+                <span>{t('profile_status')}</span>
               </div>
               <span className="text-xs sm:text-sm text-emerald-500 font-medium">
-                {user.status || 'В сети'}
+                {user.status || (language === 'en' ? 'Online' : 'В сети')}
               </span>
             </div>
 
             {/* Показывать последнее посещение */}
             <div className="py-2">
               <Toggle
-                label="Показывать последнее посещение"
-                description="Другие пользователи смогут видеть время вашей активности"
+                label={t('privacy_show_last_seen')}
+                description={t('privacy_show_last_seen_desc')}
                 checked={showLastSeen}
                 onChange={toggleLastSeen}
               />
@@ -156,8 +157,8 @@ export default function ProfileForm() {
             {/* Уведомлять о прочтении сообщений */}
             <div className="py-2">
               <Toggle
-                label="Отчёты о прочтении сообщений"
-                description="Собеседники будут видеть две синие галочки при прочтении"
+                label={t('privacy_show_read_receipts')}
+                description={t('privacy_show_read_receipts_desc')}
                 checked={showReadReceipts}
                 onChange={toggleReadReceipts}
               />
@@ -177,7 +178,7 @@ export default function ProfileForm() {
                   </svg>
                 }
               >
-                Редактировать профиль
+                {t('profile_edit')}
               </Button>
             </div>
           </div>
@@ -190,7 +191,7 @@ export default function ProfileForm() {
             className="py-4 space-y-4"
           >
             <Input
-              label="Отображаемое имя"
+              label={t('profile_display_name')}
               type="text"
               name="name"
               value={formData?.name || ''}
@@ -199,41 +200,41 @@ export default function ProfileForm() {
             />
 
             <Input
-              label="Страна"
+              label={t('country')}
               type="text"
               name="country"
               value={formData?.country || ''}
               onChange={handleChange}
-              placeholder="Например: Россия"
+              placeholder={t('profile_country_placeholder')}
             />
 
             <div className="w-full space-y-1.5">
               <label className="block text-xs font-medium text-[#6070a0] dark:text-[#7b8db5]">
-                Язык приложения
+                {t('settings_app_lang')}
               </label>
               <select
                 name="language"
-                value={formData?.language || 'ru'}
+                value={formData?.language || language}
                 onChange={handleChange}
                 className="w-full py-2.5 px-3.5 text-sm rounded-xl border border-[#dde4f0] dark:border-[#1e2955] bg-white dark:bg-[#0f1535] text-[#1a2038] dark:text-[#e8ecf4] outline-none focus:ring-2 focus:ring-blue-500/50"
               >
-                <option value="ru">Русский</option>
-                <option value="en">English</option>
+                <option value="ru">Русский (RU)</option>
+                <option value="en">English (EN)</option>
               </select>
             </div>
 
             <Input
-              label="Статус"
+              label={t('profile_status')}
               type="text"
               name="status"
               value={formData?.status || ''}
               onChange={handleChange}
-              placeholder="Например: В сети или На встрече"
+              placeholder={t('profile_status_placeholder')}
             />
 
             <div className="flex items-center gap-3 pt-3">
               <Button type="submit" variant="primary" size="md" className="flex-1">
-                Сохранить
+                {t('profile_save')}
               </Button>
               <Button
                 type="button"
@@ -241,7 +242,7 @@ export default function ProfileForm() {
                 size="md"
                 onClick={() => setIsEditing(false)}
               >
-                Отмена
+                {t('profile_cancel')}
               </Button>
             </div>
           </form>

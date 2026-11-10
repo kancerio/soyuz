@@ -4,7 +4,9 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useUser } from '@/context/UserContext';
+import { useLanguage } from '@/context/LanguageContext';
 import ThemeToggle from '@/components/ui/ThemeToggle';
+import LanguageToggle from '@/components/ui/LanguageToggle';
 import SoyuzLogo from '@/components/ui/SoyuzLogo';
 import Avatar from '@/components/ui/Avatar';
 import LoadingState from '@/components/ui/LoadingState';
@@ -13,6 +15,7 @@ import CreateGroupModal from '@/components/chat/CreateGroupModal';
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useUser();
+  const { t } = useLanguage();
   const router = useRouter();
   const pathname = usePathname();
   const [isCreateChatOpen, setIsCreateChatOpen] = useState(false);
@@ -84,7 +87,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
                   : 'text-[#6070a0] dark:text-[#7b8db5] hover:bg-gray-100 dark:hover:bg-[#1a2248] hover:text-blue-600 dark:hover:text-blue-400'
               }`}
-              title="Чаты"
+              title={t('chats')}
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -94,7 +97,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                   d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
                 />
               </svg>
-              <span className="text-[10px] mt-0.5 font-medium">Чаты</span>
+              <span className="text-[10px] mt-0.5 font-medium">{t('chats')}</span>
 
               {/* Бейдж непрочитанных сообщений */}
               <span className="absolute top-1 right-1 w-4 h-4 bg-sky-400 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
@@ -110,7 +113,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
                   : 'text-[#6070a0] dark:text-[#7b8db5] hover:bg-gray-100 dark:hover:bg-[#1a2248] hover:text-blue-600 dark:hover:text-blue-400'
               }`}
-              title="Профиль"
+              title={t('profile')}
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -120,7 +123,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                   d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
                 />
               </svg>
-              <span className="text-[10px] mt-0.5 font-medium">Профиль</span>
+              <span className="text-[10px] mt-0.5 font-medium">{t('profile')}</span>
             </Link>
 
             {/* Вкладка Настройки */}
@@ -131,7 +134,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
                   : 'text-[#6070a0] dark:text-[#7b8db5] hover:bg-gray-100 dark:hover:bg-[#1a2248] hover:text-blue-600 dark:hover:text-blue-400'
               }`}
-              title="Настройки"
+              title={t('settings')}
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -142,13 +145,14 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-              <span className="text-[10px] mt-0.5 font-medium">Настройки</span>
+              <span className="text-[10px] mt-0.5 font-medium">{t('settings')}</span>
             </Link>
           </nav>
         </div>
 
         {/* Нижний блок: Переключатель темы + Аватар */}
-        <div className="flex flex-col items-center gap-4">
+        <div className="flex flex-col items-center gap-3">
+          <LanguageToggle variant="compact" />
           <ThemeToggle />
           <Link href="/profile" title={user.name || user.email}>
             <Avatar name={user.name || user.email} src={user.avatar} size="sm" isOnline />
@@ -181,7 +185,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
               d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
             />
           </svg>
-          <span className="text-[10px] mt-0.5">Чаты</span>
+          <span className="text-[10px] mt-0.5">{t('chats')}</span>
         </Link>
 
         <Link
@@ -193,7 +197,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>
-          <span className="text-[10px] mt-0.5">Профиль</span>
+          <span className="text-[10px] mt-0.5">{t('profile')}</span>
         </Link>
 
         <Link
@@ -206,10 +210,11 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
-          <span className="text-[10px] mt-0.5">Настройки</span>
+          <span className="text-[10px] mt-0.5">{t('settings')}</span>
         </Link>
 
-        <div className="py-1 px-3">
+        <div className="flex items-center gap-1.5 py-1 px-2">
+          <LanguageToggle variant="compact" />
           <ThemeToggle />
         </div>
       </nav>

@@ -3,12 +3,17 @@
 import RegisterForm from '@/components/auth/RegisterForm';
 import SoyuzLogo from '@/components/ui/SoyuzLogo';
 import ThemeToggle from '@/components/ui/ThemeToggle';
+import LanguageToggle from '@/components/ui/LanguageToggle';
+import { useLanguage } from '@/context/LanguageContext';
 
 export default function RegisterPage() {
+  const { t } = useLanguage();
+
   return (
     <div className="relative min-h-screen w-full max-w-full min-w-0 flex flex-col items-center justify-center p-4 overflow-hidden bg-gradient-to-b from-[#eef4ff] to-[#f7f9ff] dark:from-[#080c1d] dark:to-[#0f1535]">
-      {/* Кнопка смены темы в правом верхнем углу */}
-      <div className="absolute top-4 right-4 z-20">
+      {/* Кнопка смены языка и темы в правом верхнем углу */}
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        <LanguageToggle variant="pill" />
         <ThemeToggle />
       </div>
 
@@ -29,10 +34,10 @@ export default function RegisterPage() {
         <div className="flex flex-col items-center text-center mb-6">
           <SoyuzLogo size="lg" className="mb-3" />
           <h1 className="text-2xl font-bold tracking-tight text-[#1a2038] dark:text-white">
-            Союз
+            {t('app_name')}
           </h1>
           <p className="text-xs text-[#6070a0] dark:text-[#7b8db5] mt-1">
-            Общайтесь без границ
+            {t('app_subtitle')}
           </p>
         </div>
 
@@ -43,17 +48,17 @@ export default function RegisterPage() {
       <div className="relative z-10 mt-8 flex flex-wrap items-center justify-center gap-2 sm:gap-6 px-4 text-xs text-[#6070a0] dark:text-[#7b8db5] select-none">
         <div className="flex items-center gap-1.5">
           <span className="text-amber-500">⚡</span>
-          <span>Быстро</span>
+          <span>{t('feature_fast')}</span>
         </div>
         <span className="opacity-30">•</span>
         <div className="flex items-center gap-1.5">
           <span className="text-blue-500">🛡</span>
-          <span>Безопасно</span>
+          <span>{t('feature_secure')}</span>
         </div>
         <span className="opacity-30">•</span>
         <div className="flex items-center gap-1.5">
           <span className="text-rose-500">💙</span>
-          <span>Удобно</span>
+          <span>{t('feature_convenient')}</span>
         </div>
       </div>
     </div>

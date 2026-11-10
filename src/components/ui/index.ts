@@ -10,3 +10,4 @@ export { default as LoadingState } from './LoadingState';
 export { default as ErrorState } from './ErrorState';
 export { default as SoyuzLogo } from './SoyuzLogo';
 export { default as ThemeToggle } from './ThemeToggle';
+export { default as LanguageToggle } from './LanguageToggle';
