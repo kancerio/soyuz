@@ -2,20 +2,28 @@ import { io, Socket } from 'socket.io-client';
 
 let socket: Socket | null = null;
 
-export function initSocket(userId: number): Socket {
+export function initSocket(userId: number, token?: string): Socket {
   if (!socket) {
-    const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000';
+    const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+    const authToken =
+      token ||
+      (typeof window !== 'undefined' ? sessionStorage.getItem('accessToken') : null);
+
     socket = io(SOCKET_URL, {
       transports: ['websocket'],
       autoConnect: false,
+      auth: { token: authToken },
     });
+
     socket.connect();
+
     socket.on('connect', () => {
-      console.log('Socket connected');
-      socket?.emit('auth', { userId });
+      console.log('[Socket] connected, authenticating...');
+      socket?.emit('auth', { userId, token: authToken });
     });
-    socket.on('connect_error', (err) => console.error('Socket error:', err));
-    socket.on('disconnect', () => console.log('Socket disconnected'));
+
+    socket.on('connect_error', (err) => console.error('[Socket] error:', err));
+    socket.on('disconnect', () => console.log('[Socket] disconnected'));
   }
   return socket;
 }

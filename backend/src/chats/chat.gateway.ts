@@ -116,7 +116,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.emit('auth_error', { message: 'Invalid or expired token' });
         return;
       }
-    } else if (data?.userId && (!this.jwtService || process.env.NODE_ENV === 'test')) {
+    } else if (data?.userId && (!this.jwtService || process.env.NODE_ENV !== 'production')) {
       userId = Number(data.userId);
     } else {
       logger.warn('Auth failed - missing token', {
