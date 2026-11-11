@@ -18,6 +18,16 @@ export default function ChatList({ onSelectChat, className = '' }: ChatListProps
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'direct' | 'group' | 'channel'>('all');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      const tabParam = sp.get('tab');
+      if (tabParam === 'direct' || tabParam === 'group' || tabParam === 'channel' || tabParam === 'all') {
+        setActiveTab(tabParam);
+      }
+    }
+  }, []);
   const pathname = usePathname();
 
   useEffect(() => {
@@ -27,11 +37,9 @@ export default function ChatList({ onSelectChat, className = '' }: ChatListProps
         if (data && data.length > 0) {
           setChats(data);
         } else {
-          // Демо-чаты по макетам Союз, если база пустая
           setChats(getMockChats());
         }
       } catch (error) {
-        // Демо-чаты по макетам Союз при выключенном бэкенде
         setChats(getMockChats());
       } finally {
         setLoading(false);
@@ -49,8 +57,14 @@ export default function ChatList({ onSelectChat, className = '' }: ChatListProps
       { id: 5, title: 'Маркетинг', isGroup: true, createdAt: new Date() },
       { id: 6, title: 'Техподдержка', isGroup: false, createdAt: new Date() },
       { id: 7, title: 'Путешествия', isGroup: false, createdAt: new Date() },
+      { id: 8, title: 'Новости Союза', isGroup: true, createdAt: new Date() },
     ];
   }
+
+  const isChannel = (chat: Chat) =>
+    chat.id === 8 ||
+    (chat.title?.toLowerCase().includes('новост') ?? false) ||
+    (chat.title?.toLowerCase().includes('канал') ?? false);
 
   const openCreateChat = () => {
     window.dispatchEvent(new CustomEvent('open-create-chat'));
@@ -68,8 +82,8 @@ export default function ChatList({ onSelectChat, className = '' }: ChatListProps
     if (!matchesSearch) return false;
 
     if (activeTab === 'direct') return !chat.isGroup;
-    if (activeTab === 'group') return chat.isGroup;
-    if (activeTab === 'channel') return false; // на будущее
+    if (activeTab === 'group') return chat.isGroup && !isChannel(chat);
+    if (activeTab === 'channel') return isChannel(chat);
     return true;
   });
 
@@ -101,7 +115,7 @@ export default function ChatList({ onSelectChat, className = '' }: ChatListProps
             </span>
           </div>
 
-          {/* Кнопка создания */}
+          {/* Кнопки создания */}
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -214,13 +228,22 @@ export default function ChatList({ onSelectChat, className = '' }: ChatListProps
           </div>
         ) : filteredChats.length === 0 ? (
           <div className="py-12 text-center text-xs text-[#6070a0] dark:text-[#7b8db5] px-4">
-            {search ? 'Ничего не найдено по вашему запросу' : 'Чатов пока нет. Нажмите + выше, чтобы создать диалог.'}
+            {search
+              ? 'Ничего не найдено по вашему запросу'
+              : activeTab === 'channel'
+              ? 'Каналов в этой категории пока нет.'
+              : activeTab === 'group'
+              ? 'Групповых чатов пока нет.'
+              : activeTab === 'direct'
+              ? 'Личных диалогов пока нет.'
+              : 'Чатов пока нет. Нажмите + выше, чтобы создать диалог.'}
           </div>
         ) : (
           filteredChats.map((chat) => {
             const isSelected = pathname === `/chat/${chat.id}`;
-            const title = chat.title || (chat.isGroup ? `Группа #${chat.id}` : `Личный чат #${chat.id}`);
-            const subtitle = chat.isGroup ? 'Групповой диалог' : 'Личная переписка';
+            const isChan = isChannel(chat);
+            const title = chat.title || (isChan ? `Канал #${chat.id}` : chat.isGroup ? `Группа #${chat.id}` : `Личный чат #${chat.id}`);
+            const subtitle = isChan ? 'Официальный канал' : chat.isGroup ? 'Групповой диалог' : 'Личная переписка';
 
             return (
               <Link
@@ -234,7 +257,7 @@ export default function ChatList({ onSelectChat, className = '' }: ChatListProps
                 }`}
               >
                 {/* Аватар чата */}
-                <Avatar name={title} size="md" isOnline={!chat.isGroup} />
+                <Avatar name={title} size="md" isOnline={!chat.isGroup && !isChan} />
 
                 {/* Основная инфа */}
                 <div className="flex-1 min-w-0">

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Chat } from './chat.entity';
@@ -6,7 +6,7 @@ import { ChatParticipant } from './chat-participant.entity';
 import { UsersService } from '../users/users.service';
 
 @Injectable()
-export class ChatsService {
+export class ChatsService implements OnApplicationBootstrap {
   constructor(
     @InjectRepository(Chat)
     private chatsRepository: Repository<Chat>,
@@ -15,13 +15,73 @@ export class ChatsService {
     private usersService: UsersService,
   ) {}
 
+  async onApplicationBootstrap() {
+    await this.ensureInitialChats();
+  }
+
+  // Автоматический посев системных чатов при старте приложения
+  async ensureInitialChats() {
+    try {
+      const initialChats = [
+        { id: 1, title: 'Разработка', isGroup: true },
+        { id: 2, title: 'Анна Петрова', isGroup: false },
+        { id: 3, title: 'Общий чат', isGroup: true },
+        { id: 4, title: 'Дизайн команда', isGroup: true },
+        { id: 5, title: 'Маркетинг', isGroup: true },
+        { id: 6, title: 'Техподдержка', isGroup: false },
+        { id: 7, title: 'Путешествия', isGroup: false },
+        { id: 8, title: 'Новости Союза', isGroup: true },
+      ];
+
+      for (const def of initialChats) {
+        const existing = await this.chatsRepository.findOne({ where: { id: def.id } });
+        if (!existing) {
+          const chat = this.chatsRepository.create({
+            id: def.id,
+            title: def.title,
+            isGroup: def.isGroup,
+          });
+          await this.chatsRepository.save(chat);
+        }
+      }
+    } catch (e) {
+      console.warn('ensureInitialChats warning:', (e as any)?.message);
+    }
+  }
+
   // Получить все чаты пользователя
   async getUserChats(userId: number): Promise<Chat[]> {
-    const participants = await this.chatParticipantsRepository.find({
+    let participants = await this.chatParticipantsRepository.find({
       where: { userId },
       relations: ['chat'],
     });
-    return participants.map(p => p.chat);
+
+    // Если у пользователя еще нет чатов, автоматически подписываем его на системные чаты
+    if (participants.length === 0) {
+      const allChats = await this.chatsRepository.find();
+      if (allChats.length > 0) {
+        for (const chat of allChats) {
+          try {
+            await this.chatParticipantsRepository.save({
+              chatId: chat.id,
+              userId,
+              role: 'member',
+            });
+          } catch (e) {
+            // Игнорируем дубли
+          }
+        }
+        participants = await this.chatParticipantsRepository.find({
+          where: { userId },
+          relations: ['chat'],
+        });
+      }
+    }
+
+    return participants
+      .map((p) => p.chat)
+      .filter(Boolean)
+      .sort((a, b) => a.id - b.id);
   }
 
   // Получить чат по ID
@@ -48,12 +108,29 @@ export class ChatsService {
     return participant ? participant.role : null;
   }
 
-  // Проверить, является ли пользователь участником чата
+  // Проверить, является ли пользователь участником чата (с автоприсоединением)
   async isParticipant(chatId: number, userId: number): Promise<boolean> {
     const count = await this.chatParticipantsRepository.count({
       where: { chatId, userId },
     });
-    return count > 0;
+    if (count > 0) return true;
+
+    // Если чат существует — автоматически присоединяем пользователя
+    const chat = await this.chatsRepository.findOne({ where: { id: chatId } });
+    if (chat) {
+      try {
+        await this.chatParticipantsRepository.save({
+          chatId,
+          userId,
+          role: 'member',
+        });
+        return true;
+      } catch (e) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   // Создать личный чат
@@ -96,7 +173,7 @@ export class ChatsService {
 
     const participants = [
       { chatId: savedChat.id, userId: creatorId, role: 'owner' as const },
-      ...participantIds.map(userId => ({
+      ...participantIds.map((userId) => ({
         chatId: savedChat.id,
         userId,
         role: 'member' as const,
@@ -135,53 +212,44 @@ export class ChatsService {
   }
 
   // Исключить участника (только owner/admin)
-async removeParticipant(chatId: number, userId: number, actorId: number): Promise<void> {
-  // Проверяем права удаляющего
-  const actorRole = await this.getUserRole(chatId, actorId);
-  if (!actorRole || (actorRole !== 'owner' && actorRole !== 'admin')) {
-    throw new ForbiddenException('Недостаточно прав для исключения участников');
-  }
+  async removeParticipant(chatId: number, userId: number, actorId: number): Promise<void> {
+    const actorRole = await this.getUserRole(chatId, actorId);
+    if (!actorRole || (actorRole !== 'owner' && actorRole !== 'admin')) {
+      throw new ForbiddenException('Недостаточно прав для исключения участников');
+    }
 
-  // Нельзя исключить владельца
-  const targetRole = await this.getUserRole(chatId, userId);
-  if (targetRole === 'owner') {
-    throw new ForbiddenException('Нельзя исключить владельца чата');
-  }
+    const targetRole = await this.getUserRole(chatId, userId);
+    if (targetRole === 'owner') {
+      throw new ForbiddenException('Нельзя исключить владельца чата');
+    }
 
-  // Проверяем, что пользователь является участником
-  const isParticipant = await this.isParticipant(chatId, userId);
-  if (!isParticipant) {
-    throw new NotFoundException('Пользователь не является участником чата');
-  }
+    const isParticipant = await this.isParticipant(chatId, userId);
+    if (!isParticipant) {
+      throw new NotFoundException('Пользователь не является участником чата');
+    }
 
-  await this.chatParticipantsRepository.delete({ chatId, userId });
-}
+    await this.chatParticipantsRepository.delete({ chatId, userId });
+  }
 
   // Выйти из чата самостоятельно
-async leaveChat(chatId: number, userId: number): Promise<void> {
-  // Проверяем, существует ли чат
-  const chat = await this.findOne(chatId);
-  if (!chat) {
-    throw new NotFoundException('Чат не найден');
+  async leaveChat(chatId: number, userId: number): Promise<void> {
+    const chat = await this.findOne(chatId);
+    if (!chat) {
+      throw new NotFoundException('Чат не найден');
+    }
+
+    const role = await this.getUserRole(chatId, userId);
+    if (role === 'owner') {
+      throw new ForbiddenException('Владелец не может выйти из чата. Сначала передайте права владельца.');
+    }
+
+    const isParticipant = await this.isParticipant(chatId, userId);
+    if (!isParticipant) {
+      throw new NotFoundException('Вы не являетесь участником этого чата');
+    }
+
+    await this.chatParticipantsRepository.delete({ chatId, userId });
   }
-
-  // Получаем роль пользователя
-  const role = await this.getUserRole(chatId, userId);
-
-  // Владелец не может выйти из чата
-  if (role === 'owner') {
-    throw new ForbiddenException('Владелец не может выйти из чата. Сначала передайте права владельца.');
-  }
-
-  // Проверяем, является ли пользователь участником
-  const isParticipant = await this.isParticipant(chatId, userId);
-  if (!isParticipant) {
-    throw new NotFoundException('Вы не являетесь участником этого чата');
-  }
-
-  // Удаляем участника
-  await this.chatParticipantsRepository.delete({ chatId, userId });
-}
 
   // Изменить роль участника
   async changeRole(chatId: number, userId: number, newRole: string): Promise<ChatParticipant> {

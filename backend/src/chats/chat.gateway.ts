@@ -566,11 +566,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const senderSocketId = this.userToSocket.get(message.userId);
     const senderSocket = senderSocketId ? this.server?.sockets?.sockets?.get(senderSocketId) : null;
 
-    if (senderSocket && typeof senderSocket.to === 'function') {
-      senderSocket.to(roomName).emit('new_message', message);
-    } else {
-      this.server.to(roomName).emit('new_message', message);
-    }
+    this.server.to(roomName).emit('new_message', message);
 
     logger.info('Message broadcast', {
       event: 'broadcast_new_message',
