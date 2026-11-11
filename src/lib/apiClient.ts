@@ -92,16 +92,16 @@ async function request<T>(
   return response.json();
 }
 
-function mapSttStatus(stt?: string): TranscriptStatus {
+export function mapSttStatus(stt?: string): TranscriptStatus {
   if (stt === 'pending') return 'processing';
   if (stt === 'none' || !stt) return 'skipped';
   if (stt === 'completed' || stt === 'failed') return stt;
   return 'skipped';
 }
 
-function mapSummaryStatus(s?: string): SummaryStatus {
+export function mapSummaryStatus(s?: string): SummaryStatus {
   if (s === 'pending') return 'processing';
-  if (s === 'none' || !s) return 'not_needed';
+  if (s === 'none' || s === 'skipped' || !s) return 'not_needed';
   if (s === 'completed' || s === 'failed') return s;
   return 'not_needed';
 }
@@ -188,7 +188,6 @@ export const apiClient = {
 
   getUsers: () => request<User[]>('/users'),
 
-  // Chats — только backend, без mockGroupStore
   getChats: () => request<Chat[]>('/chats'),
 
   getChat: (id: number) => request<Chat>(`/chats/${id}`),
@@ -203,7 +202,7 @@ export const apiClient = {
     }),
 
   getChatMembers: (chatId: number) =>
-    request<Array<{ userId: number; role: string }>>(`/chats/${chatId}/members`),
+    request<Array<{ userId: number; username: string; role: 'owner' | 'admin' | 'member' }>>(`/chats/${chatId}/members`),
 
   updateMemberRole: (chatId: number, userId: number, role: string) =>
     request<{ userId: number; chatId: number; role: string }>(
@@ -288,6 +287,17 @@ export const apiClient = {
       method: 'POST',
       body: JSON.stringify({ language, messages }),
     }),
+
+  /** Защищённая сводка переписки чата — сообщения не покидают сервер */
+  getChatSummary: (chatId: number, limit?: number) =>
+    request<{
+      chatId: number;
+      summary: string;
+      messagesCount: number;
+      status: 'completed' | 'failed' | 'skipped';
+    }>(
+      `/messages/chat/${chatId}/summary${limit ? `?limit=${limit}` : ''}`
+    ),
 
   transcribeAudio: async (file: Blob, language: string) => {
     const formData = new FormData();

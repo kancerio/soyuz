@@ -12,6 +12,14 @@ class LLMProviderError(RuntimeError):
     """A provider request failed or returned an invalid completion."""
 
 
+class ProviderUnavailableError(LLMProviderError):
+    """The configured provider could not be reached or is unavailable."""
+
+
+class LLMProviderTimeout(LLMProviderError):
+    """The text-generation provider exceeded its request deadline."""
+
+
 class SpeechProviderTimeout(LLMProviderError):
     """The configured speech service did not respond before its deadline."""
 
@@ -100,9 +108,17 @@ class LMStudioClient:
                             json=fallback_body,
                             headers=headers,
                         )
+        except httpx.TimeoutException as exc:
+            raise LLMProviderTimeout("LM Studio request timed out") from exc
+        except httpx.ConnectError as exc:
+            raise ProviderUnavailableError("LM Studio is unavailable") from exc
         except httpx.HTTPError as exc:
             raise LLMProviderError(f"LM Studio request failed: {exc}") from exc
 
+        if response.status_code == 503:
+            raise ProviderUnavailableError("LM Studio returned HTTP 503")
+        if response.status_code == 504:
+            raise LLMProviderTimeout("LM Studio request timed out")
         if response.is_error:
             raise LLMProviderError(f"LM Studio returned HTTP {response.status_code}")
 
@@ -162,10 +178,14 @@ class OpenAICompatibleSTTClient:
                 )
         except httpx.TimeoutException as exc:
             raise SpeechProviderTimeout("Speech provider timed out") from exc
+        except httpx.ConnectError as exc:
+            raise ProviderUnavailableError("Speech provider is unavailable") from exc
         except httpx.HTTPError as exc:
             raise LLMProviderError(f"Speech provider request failed: {exc}") from exc
 
         if response.is_error:
+            if response.status_code == 503:
+                raise ProviderUnavailableError("Speech provider returned HTTP 503")
             if response.status_code == 504:
                 raise SpeechProviderTimeout("Speech provider timed out")
             raise LLMProviderError(

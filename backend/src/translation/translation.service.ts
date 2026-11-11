@@ -11,6 +11,8 @@ export interface TranslateResult {
   targetLang: string;
   status: 'completed' | 'failed';
   mock: boolean;
+  error?: string;
+  providerStatus?: number;
 }
 
 export interface AssistResult {
@@ -19,6 +21,8 @@ export interface AssistResult {
   action: 'shorten' | 'formal' | 'friendly';
   status: 'completed' | 'failed';
   mock: boolean;
+  error?: string;
+  providerStatus?: number;
 }
 
 export interface SttResult {
@@ -34,6 +38,8 @@ export interface SttResult {
 export interface SummaryResult {
   summary: string;
   status: 'completed' | 'failed';
+  error?: string;
+  providerStatus?: number;
 }
 
 export interface SummaryMessageInput {
@@ -164,15 +170,16 @@ export class TranslationService {
 
       const result = response.data.result;
 
-      // Если AI не поддерживает режим — возвращаем mock-фолбэк
+      // Не подменяем невалидный ответ реального провайдера mock-текстом.
       if (!result || result === 'Неизвестное действие' || result.trim() === '') {
         this.logger.warn(`Assist returned unknown action for "${action}"`);
         return {
           originalText: text,
-          resultText: this.buildMockResult(trimmed, action),
+          resultText: '',
           action,
-          status: 'completed',
-          mock: true,
+          status: 'failed',
+          mock: false,
+          error: 'AI assistant returned an empty or unsupported result',
         };
       }
 
@@ -191,23 +198,9 @@ export class TranslationService {
         action,
         status: 'failed',
         mock: false,
+        error: error.message,
+        providerStatus: error.response?.status,
       };
-    }
-  }
-
-  /**
-   * Mock-фолбэк для режимов, которые AI пока не поддерживает
-   */
-  private buildMockResult(text: string, action: 'shorten' | 'formal' | 'friendly'): string {
-    switch (action) {
-      case 'shorten':
-        return text.length > 160 ? text.slice(0, 157) + '...' : text;
-      case 'formal':
-        return `[Официально] ${text}`;
-      case 'friendly':
-        return `[Дружелюбно] ${text}`;
-      default:
-        return text;
     }
   }
 
@@ -272,6 +265,8 @@ export class TranslationService {
       targetLang,
       status: 'failed',
       mock: false,
+      error: lastError?.message,
+      providerStatus: lastError?.response?.status,
     };
   }
 
@@ -357,49 +352,22 @@ export class TranslationService {
       return failed;
     }
 
-    const conversationText = messages
-      .map((m) => `${m.sender_id}: ${m.text.trim()}`)
-      .join('\n');
-
+    const payload = { messages, language };
+    let lastError: any;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        let response;
-        try {
-          // Согласованный контракт: POST /summary { messages, language, text }
-          response = await firstValueFrom(
-            this.httpService.post(
-              `${this.aiBaseUrl}/summary`,
-              {
-                messages,
-                language: language || 'ru',
-              },
-              { timeout: this.timeoutMs },
-            ),
-          );
-        } catch (postErr) {
-          if (postErr.response?.status === 404 || postErr.response?.status === 422) {
-            // Фолбэк на /secretary для плавного перехода, пока сервис обновляется
-            response = await firstValueFrom(
-              this.httpService.post(
-                `${this.aiBaseUrl}/secretary`,
-                { action: 'summary', details: conversationText },
-                { timeout: this.timeoutMs },
-              ),
-            );
-          } else {
-            throw postErr;
-          }
+        const response = await firstValueFrom(
+          this.httpService.post(`${this.aiBaseUrl}/summary`, payload, {
+            timeout: this.timeoutMs,
+          }),
+        );
+        const data = response?.data || {};
+        const summary = data.summary || data.result || '';
+        if (typeof summary !== 'string' || !summary.trim()) {
+          throw new Error('AI summary response did not contain summary');
         }
-
-        const data = response.data || {};
-        const summary =
-          data.summary ||
-          data.result ||
-          data.message ||
-          '';
-
         return {
-          summary,
+          summary: summary.trim(),
           decisions: Array.isArray(data.decisions) ? data.decisions : [],
           participants: Array.isArray(data.participants) ? data.participants : [],
           language: data.language || language,
@@ -407,6 +375,7 @@ export class TranslationService {
           status: 'completed',
         };
       } catch (error) {
+        lastError = error;
         const status = error.response?.status;
         if (status === 503 || error.code === 'ECONNABORTED') {
           this.logger.warn(`Summary attempt ${attempt + 1} failed (${status || 'timeout'}), retrying...`);
@@ -416,7 +385,11 @@ export class TranslationService {
       }
     }
 
-    return failed;
+    return {
+      ...failed,
+      error: lastError?.message,
+      providerStatus: lastError?.response?.status,
+    };
   }
 
   /**

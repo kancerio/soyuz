@@ -136,6 +136,39 @@ describe('TranslationService - Чистый контракт без legacy-по�
       );
       expect(result).toEqual({ summary: 'Краткая сводка', status: 'completed' });
     });
+
+    it('передает все сообщения и разбирает структурированный ответ', async () => {
+      const messages = [
+        { sender_id: 'alice', text: 'Подтвердили релиз в пятницу.', timestamp: '10:00' },
+        { sender_id: 'bob', text: 'Боб проверит сборку.', timestamp: '10:02' },
+      ];
+      mockHttpService.post.mockReturnValueOnce(
+        of({
+          data: {
+            summary: 'Релиз назначен на пятницу.',
+            decisions: ['Релиз в пятницу'],
+            participants: ['alice', 'bob'],
+            language: 'ru',
+            provider: 'lmstudio',
+          },
+        }),
+      );
+
+      const result = await service.summarizeMessages(messages, 'ru');
+
+      expect(mockHttpService.post).toHaveBeenCalledWith(
+        'http://localhost:8000/summary',
+        { messages, language: 'ru' },
+        expect.objectContaining({ timeout: 120000 }),
+      );
+      expect(result).toMatchObject({
+        summary: 'Релиз назначен на пятницу.',
+        decisions: ['Релиз в пятницу'],
+        participants: ['alice', 'bob'],
+        provider: 'lmstudio',
+        status: 'completed',
+      });
+    });
   });
 
   it('gives real Whisper enough configurable time and parses its transcript', async () => {
@@ -182,5 +215,42 @@ describe('TranslationService - Чистый контракт без legacy-по�
       error: 'timeout of 120000ms exceeded',
     });
     expect(mockHttpService.post).toHaveBeenCalledTimes(2);
+  });
+  describe('generateSummary() - согласованный эндпоинт /summary', () => {
+    it('должен отправлять { text } на /summary и возвращать summary', async () => {
+      mockHttpService.post.mockReturnValueOnce(
+        of({
+          data: {
+            summary: 'Краткая суть переписки',
+          },
+        }),
+      );
+
+      const res = await service.generateSummary('Длинный текст диалога или голосового сообщения');
+
+      expect(mockHttpService.post).toHaveBeenCalledWith(
+        'http://localhost:8000/summary',
+        { messages: [{ sender_id: 'voice', text: 'Длинный текст диалога или голосового сообщения' }], language: 'ru' },
+        expect.any(Object),
+      );
+      expect(res.status).toBe('completed');
+      expect(res.summary).toBe('Краткая суть переписки');
+    });
+
+    it('не обращается к legacy /secretary, если /summary недоступен', async () => {
+      const notFoundErr = new Error('Not found');
+      (notFoundErr as any).response = { status: 404 };
+      mockHttpService.post.mockReturnValue(throwError(() => notFoundErr));
+
+      const res = await service.generateSummary('Текст для сводки');
+
+      expect(mockHttpService.post).toHaveBeenCalledTimes(1);
+      expect(mockHttpService.post).toHaveBeenCalledWith(
+        'http://localhost:8000/summary',
+        { messages: [{ sender_id: 'voice', text: 'Текст для сводки' }], language: 'ru' },
+        expect.any(Object),
+      );
+      expect(res).toMatchObject({ status: 'failed', summary: '' });
+    });
   });
 });

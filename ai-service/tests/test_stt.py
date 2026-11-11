@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 import src.main as main
 
-from src.llm_provider import LLMProviderError, SpeechProviderTimeout
+from src.llm_provider import LLMProviderError, ProviderUnavailableError, SpeechProviderTimeout
 
 client = TestClient(main.app)
 
@@ -99,3 +99,20 @@ def test_stt_reports_provider_timeout_as_gateway_timeout(monkeypatch):
 
     assert response.status_code == 504
     assert response.json()["detail"] == "Speech provider timed out"
+
+
+def test_stt_returns_503_when_whisper_is_unavailable(monkeypatch):
+    def fail_provider():
+        raise ProviderUnavailableError("Speech provider is unavailable")
+
+    monkeypatch.setenv("STT_PROVIDER", "openai_compatible")
+    monkeypatch.setattr(main, "get_stt_client", fail_provider)
+
+    response = client.post(
+        "/stt",
+        files={"audio": ("voice.wav", b"audio", "audio/wav")},
+        data={"language": "ru"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "ai_provider_unavailable"

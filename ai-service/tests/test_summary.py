@@ -3,6 +3,7 @@ import json
 from fastapi.testclient import TestClient
 
 import src.main as main
+from src.llm_provider import ProviderUnavailableError
 
 
 client = TestClient(main.app)
@@ -116,3 +117,18 @@ def test_summary_accepts_json_like_provider_output(monkeypatch):
     assert response.status_code == 200
     assert response.json()["summary"] == "Готово"
     assert response.json()["decisions"] == ["Выполнить"]
+
+
+def test_summary_returns_503_when_lm_studio_is_unavailable(monkeypatch):
+    class OfflineClient:
+        async def complete(self, *_args, **_kwargs):
+            raise ProviderUnavailableError("LM Studio is unavailable")
+
+    monkeypatch.setenv("AI_MOCK_MODE", "false")
+    monkeypatch.setenv("AI_PROVIDER", "lmstudio")
+    monkeypatch.setattr(main, "get_llm_client", lambda: OfflineClient())
+
+    response = client.post("/summary", json={"messages": MESSAGES})
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "ai_provider_unavailable"

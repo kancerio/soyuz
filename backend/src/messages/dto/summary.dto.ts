@@ -5,6 +5,8 @@ import {
   IsArray,
   IsOptional,
   IsString,
+  IsIn,
+  Matches,
   MaxLength,
   MinLength,
   ValidateNested,
@@ -13,11 +15,13 @@ import {
 export class SummaryMessageDto {
   @IsString()
   @MinLength(1)
+  @Matches(/\S/)
   @MaxLength(200)
   sender_id: string;
 
   @IsString()
   @MinLength(1)
+  @Matches(/\S/)
   @MaxLength(5000)
   text: string;
 
@@ -35,8 +39,6 @@ export class SummaryDto {
   messages: SummaryMessageDto[];
 
   @IsOptional()
-  @IsString()
-  @MinLength(2)
-  @MaxLength(20)
+  @IsIn(['ru', 'en', 'de', 'fr', 'es', 'zh', 'ar'])
   language = 'ru';
 }

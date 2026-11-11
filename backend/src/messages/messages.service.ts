@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, BadGatewayException, GatewayTimeoutException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, BadGatewayException, GatewayTimeoutException, ServiceUnavailableException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -241,7 +241,7 @@ export class MessagesService {
   ): Promise<AssistResult> {
     const result = await this.translationService.assist(text, action);
     if (result.status === 'failed') {
-      throw new BadGatewayException('AI assistant is temporarily unavailable');
+      this.throwAiFailure('AI assistant', result.providerStatus, result.error);
     }
     return result;
   }
@@ -249,7 +249,7 @@ export class MessagesService {
   async translateText(text: string, sourceLang: string, targetLang: string) {
     const result = await this.translationService.translate(text, sourceLang, targetLang);
     if (result.status === 'failed') {
-      throw new BadGatewayException('AI translation is temporarily unavailable');
+      this.throwAiFailure('AI translation', result.providerStatus, result.error);
     }
     return result;
   }
@@ -257,7 +257,7 @@ export class MessagesService {
   async summarizeMessages(messages: SummaryMessageInput[], language: string) {
     const result = await this.translationService.summarizeMessages(messages, language);
     if (result.status === 'failed') {
-      throw new BadGatewayException('AI summary is temporarily unavailable');
+      this.throwAiFailure('AI summary', result.providerStatus, result.error);
     }
     return result;
   }
@@ -279,9 +279,20 @@ export class MessagesService {
       ) {
         throw new GatewayTimeoutException('Speech recognition timed out');
       }
-      throw new BadGatewayException('Speech recognition is temporarily unavailable');
+      this.throwAiFailure('Speech recognition', result.providerStatus, result.error);
     }
     return result;
+  }
+
+  private throwAiFailure(operation: string, providerStatus?: number, error?: string): never {
+    const message = `${operation} is temporarily unavailable`;
+    if (providerStatus === 503) {
+      throw new ServiceUnavailableException(message);
+    }
+    if (providerStatus === 504 || /timed?\s*out|timeout/i.test(error ?? '')) {
+      throw new GatewayTimeoutException(`${operation} timed out`);
+    }
+    throw new BadGatewayException(message);
   }
   async editMessage(messageId: number, userId: number, newContent: string): Promise<Message> {
     const message = await this.getMessage(messageId);

@@ -1,7 +1,7 @@
 const VALID_AUDIO_FIXTURE = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x00, 0x00, 0x1f, 0x42, 0x86, 0x81, 0x01, 0x42, 0xf7, 0x81, 0x01]);
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ForbiddenException, NotFoundException, BadRequestException, BadGatewayException, GatewayTimeoutException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, BadRequestException, BadGatewayException, GatewayTimeoutException, ServiceUnavailableException } from '@nestjs/common';
 
 jest.mock('@nestjs/event-emitter', () => {
   class MockEventEmitter2 {
@@ -132,6 +132,28 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
     await expect(
       service.sendMessageWithTranslation(1, 999, 'Привет'),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('возвращает 503-контракт при недоступности AI-провайдера', async () => {
+    mockTranslationService.translate.mockResolvedValueOnce({
+      status: 'failed',
+      providerStatus: 503,
+      error: 'provider unavailable',
+    });
+    await expect(service.translateText('Привет', 'ru', 'en')).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+  });
+
+  it('возвращает 504-контракт при тайм-ауте AI-провайдера', async () => {
+    mockTranslationService.summarizeMessages.mockResolvedValueOnce({
+      status: 'failed',
+      providerStatus: 504,
+      error: 'provider timeout',
+    });
+    await expect(
+      service.summarizeMessages([{ sender_id: 'alice', text: 'Обсудили задачу' }], 'ru'),
+    ).rejects.toThrow(GatewayTimeoutException);
   });
 
   it('должен автоматически определить targetLang по языку собеседника в чате', async () => {
@@ -324,7 +346,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
           expect.objectContaining({
             messageId: 101,
             transcript: 'Распознанный голос достаточной длины для проверки формирования выжимки голосового',
-            sttStatus: 'completed',
+          transcriptStatus: 'completed',
           }),
         );
         expect(mockEventEmitter.emit).toHaveBeenCalledWith(

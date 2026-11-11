@@ -1,8 +1,9 @@
-import { IsIn, IsString, MinLength, MaxLength } from 'class-validator';
+import { IsIn, IsString, Matches, MinLength, MaxLength } from 'class-validator';
 
 export class AssistDto {
   @IsString()
   @MinLength(1, { message: 'Текст не может быть пустым' })
+  @Matches(/\S/, { message: 'Текст не может быть пустым' })
   @MaxLength(5000, { message: 'Текст не должен превышать 5000 символов' })
   text: string;
 
