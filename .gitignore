@@ -57,3 +57,21 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+.next
+*.tsbuildinfo
+
+mockup_screens/
+
+
+soyuz_all_screens_report.zip
+
+
+UI_UX_Sprint_Report.docx
+
+
+design_system_screens/
+design_system_screens.zip
+
+maxim_chat_screens/
+maxim_chat_screens.zip

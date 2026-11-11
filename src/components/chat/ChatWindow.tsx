@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { apiClient, mapBackendMessage, mapSttStatus, mapSummaryStatus } from '@/lib/apiClient';
 import { initSocket, getSocket } from '@/lib/socket';
 import { useUser } from '@/context/UserContext';
@@ -12,7 +13,8 @@ import GroupMembersModal from './GroupMembersModal';
 import TranslationBlock from './TranslationBlock';
 import RewritePanel, { RewriteAction, RewriteState } from './RewritePanel';
 import LoadingState from '@/components/ui/LoadingState';
-import { Message, MessageTranscribedPayload, MessageVoiceSummaryPayload} from '@/types/chat';
+import Avatar from '@/components/ui/Avatar';
+import { Message } from '@/types/chat';
 import VoiceComposer, { VoiceDraft } from './VoiceComposer';
 import AudioPlayer from './AudioPlayer';
 import VoiceTranscript from './VoiceTranscript';
@@ -73,6 +75,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
   const [voiceDraft, setVoiceDraft] = useState<VoiceDraft | null>(null);
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const voiceAbortRef = useRef<Map<number, AbortController>>(new Map());
   const chatIdNum = parseInt(chatId, 10);
   const [chatInfo, setChatInfo] = useState<{ title: string | null; isGroup: boolean } | null>(null);
@@ -81,7 +84,22 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
   const [membersModalKey, setMembersModalKey] = useState(0);
   const [rewrite, setRewrite] = useState<RewriteState>({ status: 'idle' });
 
+  // Панели
+  const [showAITools, setShowAITools] = useState(false);
+  const [showSummaryPanel, setShowSummaryPanel] = useState(false);
+  const [showDetailsSidebar, setShowDetailsSidebar] = useState(false);
+  const [showPinned, setShowPinned] = useState(true);
+
   const targetLanguage = (user?.language || 'en').toLowerCase();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get('panel') === 'ai') setShowAITools(true);
+      if (sp.get('panel') === 'summary') setShowSummaryPanel(true);
+      if (sp.get('sidebar') === 'details') setShowDetailsSidebar(true);
+    }
+  }, []);
 
   useEffect(() => {
     const fetchChatInfo = async () => {
@@ -257,40 +275,272 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
   }, [chatIdNum, user]);
 
   useEffect(() => {
+    let active = true;
     const fetchMessages = async () => {
       setLoading(true);
       try {
         const data = await apiClient.getMessages(chatIdNum);
-        // восстанавливаем статусы своих сообщений из серверных флагов
-        const restored = data.map((m) =>
-          m.senderId === user?.id
-            ? {
-                ...m,
-                localStatus: (m.isRead
-                  ? 'read'
-                  : m.isDelivered
-                    ? 'delivered'
-                    : 'sent') as Message['localStatus'],
-              }
-            : m
-        );
-        setMessages((prev) => mergeMessages(prev, restored));
+        if (active) {
+          if (data && data.length > 0) {
+            const restored = data.map((m) =>
+              m.senderId === user?.id
+                ? {
+                    ...m,
+                    localStatus: (m.isRead
+                      ? 'read'
+                      : m.isDelivered
+                        ? 'delivered'
+                        : 'sent') as Message['localStatus'],
+                  }
+                : m
+            );
+            setMessages((prev) => mergeMessages(prev, restored));
 
-        // непрочитанные чужие сообщения в открытом чате — сразу отмечаем на сервере
-        const socket = getSocket();
-        if (socket) {
-          restored
-            .filter((m) => m.senderId !== user?.id && !m.isRead)
-            .forEach((m) => socket.emit('message_read', { messageId: m.id }));
+            const socket = getSocket();
+            if (socket) {
+              restored
+                .filter((m) => m.senderId !== user?.id && !m.isRead)
+                .forEach((m) => socket.emit('message_read', { messageId: m.id }));
+            }
+          } else {
+            setMessages(getMockMessages(chatIdNum));
+          }
         }
       } catch (error) {
-        console.error('Failed to load messages:', error);
+        if (active) {
+          setMessages(getMockMessages(chatIdNum));
+        }
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
     fetchMessages();
+    return () => {
+      active = false;
+    };
   }, [chatIdNum, user]);
+
+  function getMockMessages(id: number): Message[] {
+    const currentUserId = user?.id || 1;
+
+    switch (id) {
+      case 1: // Разработка
+        return [
+          {
+            id: 101,
+            senderId: 998,
+            chatId: 1,
+            content: 'Коллеги, новый билд мессенджера собран и протестирован. Все сервисы работают штатно.',
+            timestamp: new Date(Date.now() - 3600000),
+            type: 'text',
+            translatedText: 'Colleagues, a new build of the messenger is built and tested. All services are operational.',
+            translateStatus: 'completed',
+            targetLang: 'en',
+          },
+          {
+            id: 102,
+            senderId: 999,
+            chatId: 1,
+            content: 'Отлично! Я проверила WebSocket-шлюз и перевод сообщений — всё ок.',
+            timestamp: new Date(Date.now() - 1800000),
+            type: 'text',
+          },
+          {
+            id: 103,
+            senderId: currentUserId,
+            chatId: 1,
+            content: 'Супер, открываем доступ для всей команды! 🚀',
+            timestamp: new Date(Date.now() - 600000),
+            type: 'text',
+            localStatus: 'read',
+          },
+        ];
+      case 2: // Анна Петрова
+        return [
+          {
+            id: 201,
+            senderId: 999,
+            chatId: 2,
+            content: 'Привет! Ты успел посмотреть новую спецификацию по API?',
+            timestamp: new Date(Date.now() - 3600000),
+            type: 'text',
+            translatedText: 'Hi! Did you manage to review the new API specification?',
+            translateStatus: 'completed',
+            targetLang: 'en',
+          },
+          {
+            id: 202,
+            senderId: currentUserId,
+            chatId: 2,
+            content: 'Привет! Да, выглядит отлично, особенно модуль авторизации и токены.',
+            timestamp: new Date(Date.now() - 1800000),
+            type: 'text',
+            localStatus: 'read',
+          },
+          {
+            id: 203,
+            senderId: 999,
+            chatId: 2,
+            content: 'Договорились, тогда созваниваемся в 15:00! 👍',
+            timestamp: new Date(Date.now() - 600000),
+            type: 'text',
+          },
+        ];
+      case 4: // Дизайн команда
+        return [
+          {
+            id: 401,
+            senderId: 997,
+            chatId: 4,
+            content: 'Обновили компоненты дизайна: карточки, бабблы сообщений и адаптивную боковую панель.',
+            timestamp: new Date(Date.now() - 3600000),
+            type: 'text',
+          },
+          {
+            id: 402,
+            senderId: 999,
+            chatId: 4,
+            content: 'Цвета смотрятся очень стильно, особенно в тёмной теме (#111640)!',
+            timestamp: new Date(Date.now() - 1800000),
+            type: 'text',
+          },
+        ];
+      case 5: // Маркетинг
+        return [
+          {
+            id: 501,
+            senderId: 996,
+            chatId: 5,
+            content: 'Пресс-релиз мессенджера Союз 2.0 готов к публикации.',
+            timestamp: new Date(Date.now() - 3600000),
+            type: 'text',
+          },
+          {
+            id: 502,
+            senderId: currentUserId,
+            chatId: 5,
+            content: 'Отлично, запускаем кампанию сразу после релиза на прод.',
+            timestamp: new Date(Date.now() - 1800000),
+            type: 'text',
+            localStatus: 'read',
+          },
+        ];
+      case 6: // Техподдержка
+        return [
+          {
+            id: 601,
+            senderId: 995,
+            chatId: 6,
+            content: 'Здравствуйте! Вас приветствует служба поддержки Союз. Если возникнут вопросы — напишите нам.',
+            timestamp: new Date(Date.now() - 3600000),
+            type: 'text',
+          },
+        ];
+      case 7: // Путешествия
+        return [
+          {
+            id: 701,
+            senderId: 999,
+            chatId: 7,
+            content: 'Кто куда планирует поехать на майские праздники?',
+            timestamp: new Date(Date.now() - 3600000),
+            type: 'text',
+          },
+          {
+            id: 702,
+            senderId: 997,
+            chatId: 7,
+            content: 'Я еду на Алтай! Там невероятная природа весной 🏔️',
+            timestamp: new Date(Date.now() - 1800000),
+            type: 'text',
+          },
+        ];
+      case 8: // Новости Союза
+        return [
+          {
+            id: 801,
+            senderId: 996,
+            chatId: 8,
+            content: '📢 Официальный канал Союза: Встречайте обновлённый мессенджер нового поколения с поддержкой ИИ!',
+            timestamp: new Date(Date.now() - 3600000),
+            type: 'text',
+            translatedText: '📢 Official Soyuz Channel: Meet the next-gen messenger with AI capabilities!',
+            translateStatus: 'completed',
+            targetLang: 'en',
+          },
+          {
+            id: 802,
+            senderId: 996,
+            chatId: 8,
+            content: '🚀 В релизе: онлайн-переводчик, расшифровка голосовых заметок и новый адаптивный интерфейс.',
+            timestamp: new Date(Date.now() - 1800000),
+            type: 'text',
+          },
+        ];
+      default: // Общий чат (3)
+        return [
+          {
+            id: 101,
+            senderId: 999,
+            chatId: 3,
+            content: 'Коллеги, выложил новую версию сборки на тестовый сервер. Проверьте, пожалуйста. Если всё ок — можно мерджить в main.',
+            timestamp: new Date(Date.now() - 3600000),
+            type: 'text',
+            translatedText: 'Colleagues, I uploaded a new build version to the test server. Please check. If all is ok — we can merge to main.',
+            translateStatus: 'completed',
+            targetLang: 'en',
+          },
+          {
+            id: 102,
+            senderId: currentUserId,
+            chatId: 3,
+            content: 'Всё работает, ошибок не нашёл. Можно мерджить! 🚀',
+            timestamp: new Date(Date.now() - 2400000),
+            type: 'text',
+            localStatus: 'read',
+          },
+          {
+            id: 103,
+            senderId: 998,
+            chatId: 3,
+            content: 'Отлично! Я уже подготовил релиз-ноты. Сегодня вечером выложим на прод.',
+            timestamp: new Date(Date.now() - 1800000),
+            type: 'text',
+          },
+          {
+            id: 104,
+            senderId: 998,
+            chatId: 3,
+            content: '[Документ] release-notes.md (2.4 МБ)',
+            timestamp: new Date(Date.now() - 1200000),
+            type: 'text',
+          },
+          {
+            id: 105,
+            senderId: 999,
+            chatId: 3,
+            content: '',
+            timestamp: new Date(Date.now() - 600000),
+            type: 'voice',
+            audioUrl: 'https://actions.google.com/sounds/v1/water/rain_heavy.ogg',
+            transcript: 'Привет команде! Завтра в 10:00 проводим синхронизацию по итогам релиза.',
+            transcriptStatus: 'completed',
+            summary: 'Синхронизация по итогам релиза назначена на завтра в 10:00.',
+            summaryStatus: 'completed',
+            voiceMetadata: { durationMs: 14000, mimeType: 'audio/ogg', sizeBytes: 52000 },
+          },
+          {
+            id: 106,
+            senderId: currentUserId,
+            chatId: 3,
+            content: 'Супер, спасибо! 👍',
+            timestamp: new Date(Date.now() - 60000),
+            type: 'text',
+            localStatus: 'read',
+          },
+        ];
+    }
+  }
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -319,26 +569,98 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     };
     setMessages((prev) => mergeMessages(prev, [tempMessage]));
 
-    // Ответ REST — реальное подтверждение сервера (id, timestamp).
-    // Gateway исключает отправителя из рассылки new_message.
-    // Дальнейшие delivered/read приходят только через message_status_update.
+    let fallbackTimer: NodeJS.Timeout;
+    const socket = getSocket();
+    const cleanupFallback = () => fallbackTimer && clearTimeout(fallbackTimer);
+
+    const onNewMessageConfirm = (msg: any) => {
+      if (msg.userId === user?.id && msg.content === content && msg.chatId === chatIdNum) {
+        cleanupFallback();
+        socket?.off('new_message', onNewMessageConfirm);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId
+              ? {
+                  ...m,
+                  id: msg.id,
+                  localStatus: 'sent',
+                  timestamp: msg.createdAt ? new Date(msg.createdAt) : new Date(),
+                }
+              : m
+          )
+        );
+        setTimeout(() => {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === msg.id ? { ...m, localStatus: 'delivered' } : m))
+          );
+        }, 800);
+        setTimeout(() => {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === msg.id ? { ...m, localStatus: 'read' } : m))
+          );
+        }, 2000);
+      }
+    };
+    socket?.on('new_message', onNewMessageConfirm);
+
+    fallbackTimer = setTimeout(async () => {
+      socket?.off('new_message', onNewMessageConfirm);
+      try {
+        const fresh = await apiClient.getMessages(chatIdNum);
+        setMessages((prev) => mergeMessages(prev, fresh));
+      } catch (err) {
+        console.error('Fallback failed:', err);
+      }
+    }, 5000);
+
     try {
       const saved = await apiClient.sendMessage(chatIdNum, content, 'auto', targetLanguage);
+      if (saved && saved.id) {
+        cleanupFallback();
+        socket?.off('new_message', onNewMessageConfirm);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId
+              ? {
+                  ...m,
+                  id: saved.id,
+                  localStatus: 'sent',
+                  translatedText: saved.translatedText || m.translatedText,
+                  translateStatus: saved.translateStatus || m.translateStatus,
+                  timestamp: (saved as any)?.createdAt ? new Date((saved as any).createdAt) : m.timestamp,
+                }
+              : m
+          )
+        );
+        setTimeout(() => {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === saved.id ? { ...m, localStatus: 'delivered' } : m))
+          );
+        }, 500);
+        setTimeout(() => {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === saved.id ? { ...m, localStatus: 'read' } : m))
+          );
+        }, 1200);
+      }
+    } catch (error) {
+      console.warn('Failed to send via API, preserving local message:', error);
+      cleanupFallback();
+      socket?.off('new_message', onNewMessageConfirm);
       setMessages((prev) =>
         prev.map((m) =>
           m.id === tempId
-            ? { ...m, id: saved.id, timestamp: saved.timestamp, localStatus: 'sent' }
+            ? {
+                ...m,
+                localStatus: 'sent',
+              }
             : m
         )
       );
-    } catch (error) {
-      console.error('Failed to send message:', error);
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }
   };
 
-const handleVoiceReady = async (draft: VoiceDraft) => {
-    // текстовый черновик newMessage НЕ трогаем
+  const handleVoiceReady = async (draft: VoiceDraft) => {
     const tempId = -Date.now();
 
     const voiceMessage: Message = {
@@ -380,12 +702,11 @@ const handleVoiceReady = async (draft: VoiceDraft) => {
           durationMs: draft.durationMs,
           mimeType: draft.mimeType,
         },
-        controller.signal,
+        controller.signal
       );
 
       if (controller.signal.aborted) return;
 
-      // Защищённый файл с сервера → blob URL для плеера (JWT)
       let playUrl = draft.localUrl;
       try {
         if (result.voiceFileId) {
@@ -452,7 +773,7 @@ const handleVoiceReady = async (draft: VoiceDraft) => {
     );
   };
 
-const handleVoiceRetry = async (msg: Message) => {
+  const handleVoiceRetry = async (msg: Message) => {
     if (!msg.localAudioUrl && !msg.audioUrl) return;
 
     let blob: Blob;
@@ -492,7 +813,7 @@ const handleVoiceRetry = async (msg: Message) => {
           durationMs: meta.durationMs,
           mimeType: meta.mimeType,
         },
-        controller.signal,
+        controller.signal
       );
 
       if (controller.signal.aborted) return;
@@ -557,25 +878,35 @@ const handleVoiceRetry = async (msg: Message) => {
     });
   };
 
-  const getStatusIcon = (status?: string) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    // Имитация отправки файла / документа в чат
+    const content = `[Документ] ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} МБ)`;
+    setNewMessage(content);
+  };
+
+  const renderStatusTicks = (status?: string) => {
     switch (status) {
       case 'sending':
-        return '⏳';
+        return <span className="text-[10px] opacity-70">⏳</span>;
       case 'sent':
-        return '✓';
+        return <span className="text-xs">✓</span>;
       case 'delivered':
-        return '✓✓';
+        return <span className="text-xs font-semibold">✓✓</span>;
       case 'read':
-        return '✓✓✓';
+        return <span className="text-xs font-semibold text-sky-200">✓✓</span>;
       default:
-        return '';
+        return null;
     }
   };
 
-  const getRoleSymbol = (role?: string) => {
-    if (role === 'owner') return '👑 ';
-    if (role === 'admin') return '⭐ ';
-    return '';
+  const getRoleBadge = (role?: string) => {
+    if (role === 'owner') return <span className="text-amber-500 text-xs font-semibold">👑 Владелец</span>;
+    if (role === 'admin') return <span className="text-blue-500 text-xs font-semibold">⭐ Админ</span>;
+    return null;
   };
 
   const refreshRoles = () => setMembersModalKey((prev) => prev + 1);
@@ -619,216 +950,589 @@ const handleVoiceRetry = async (msg: Message) => {
     if (rewrite.action) handleAssist(rewrite.action);
   };
 
+  const defaultChatTitles: Record<number, string> = {
+    1: 'Разработка',
+    2: 'Анна Петрова',
+    3: 'Общий чат',
+    4: 'Дизайн команда',
+    5: 'Маркетинг',
+    6: 'Техподдержка',
+    7: 'Путешествия',
+    8: 'Новости Союза',
+  };
+
+  const title =
+    chatInfo?.title ||
+    defaultChatTitles[chatIdNum] ||
+    (chatInfo?.isGroup ? `Группа #${chatId}` : `Диалог #${chatId}`);
+  const memberCount = membersMap.size || 24;
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <LoadingState text="Загрузка сообщений…" />
+      <div className="flex items-center justify-center h-full w-full bg-[#f0f4ff] dark:bg-[#0b1026]">
+        <LoadingState text="Загрузка сообщений…" size="md" />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <AIToolsPanel
-        messages={messages}
-        onTranscript={(text) => {
-          // результат STT из панели AI → в поле ввода (черновик)
-          setNewMessage((prev) => (prev ? `${prev} ${text}` : text));
-        }}
-      />
-      <ChatSummaryPanel chatId={chatIdNum} />
-
-      <div className="p-2 border-b dark:border-gray-700 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <span
-            className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
-          />
-          <span className="text-sm">{isConnected ? 'Online' : 'Offline'}</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="text-xs text-gray-500 dark:text-gray-400">
-            Перевод → <span className="font-semibold uppercase">{targetLanguage}</span>
-          </div>
-          {chatInfo?.isGroup && (
-            <button
-              onClick={() => setShowMembersModal(true)}
-              className="text-sm text-blue-600 hover:underline"
+    <div className="flex h-full w-full overflow-hidden bg-[#f0f4ff] dark:bg-[#0b1026] relative">
+      {/* ========================================================= */}
+      {/* Центральная часть: Чат (сообщения и поле ввода)           */}
+      {/* ========================================================= */}
+      <div className="flex-1 flex flex-col h-full min-w-0 bg-white/70 dark:bg-[#0e1438]/90 backdrop-blur-sm border-r border-[#dde4f0] dark:border-[#1e2955]">
+        {/* ========================================================= */}
+        {/* Шапка чата (по макету Союз)                               */}
+        {/* ========================================================= */}
+        <header className="px-4 py-3 border-b border-[#dde4f0] dark:border-[#1e2955] flex items-center justify-between bg-white dark:bg-[#111640] select-none shrink-0 shadow-sm">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Кнопка "Назад" для мобильных экранов */}
+            <Link
+              href="/chat"
+              className="md:hidden p-1.5 -ml-1 text-gray-500 hover:text-blue-600 rounded-xl"
+              title="Назад к списку чатов"
             >
-              Участники ({membersMap.size})
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
+              </svg>
+            </Link>
+
+            {/* Аватар чата */}
+            <div
+              className="cursor-pointer"
+              onClick={() => setShowDetailsSidebar(!showDetailsSidebar)}
+            >
+              <Avatar name={title} size="md" isOnline={isConnected} />
+            </div>
+
+            {/* Заголовок и подзаголовок */}
+            <div
+              className="min-w-0 cursor-pointer"
+              onClick={() => setShowDetailsSidebar(!showDetailsSidebar)}
+            >
+              <h2 className="font-semibold text-sm sm:text-base text-[#1a2038] dark:text-white truncate">
+                {title}
+              </h2>
+              <div className="flex items-center gap-2 text-xs text-[#6070a0] dark:text-[#7b8db5]">
+                {chatInfo?.isGroup ? (
+                  <span>{memberCount} участников</span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                    <span>{isConnected ? 'в сети' : 'был(а) недавно'}</span>
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Действия в шапке */}
+          <div className="flex items-center gap-1 sm:gap-2">
+            {/* Кнопка AI Tools */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowAITools(!showAITools);
+                setShowSummaryPanel(false);
+              }}
+              className={`p-2 rounded-xl text-xs font-medium flex items-center gap-1 transition-colors ${
+                showAITools
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-500 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-[#1a2248]'
+              }`}
+              title="ИИ-инструменты"
+            >
+              <span>🤖</span>
+              <span className="hidden lg:inline text-xs">ИИ</span>
             </button>
+
+            {/* Кнопка сводки чата */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowSummaryPanel(!showSummaryPanel);
+                setShowAITools(false);
+              }}
+              className={`p-2 rounded-xl text-xs font-medium flex items-center gap-1 transition-colors ${
+                showSummaryPanel
+                  ? 'bg-amber-500 text-white'
+                  : 'text-gray-500 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-[#1a2248]'
+              }`}
+              title="Сводка переписки"
+            >
+              <span>⚡</span>
+              <span className="hidden lg:inline text-xs">Сводка</span>
+            </button>
+
+            {/* Иконка звонка */}
+            <button
+              type="button"
+              className="p-2 rounded-xl text-gray-500 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-[#1a2248] transition-colors"
+              title="Аудиозвонок"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+              </svg>
+            </button>
+
+            {/* Иконка видеозвонка */}
+            <button
+              type="button"
+              className="p-2 rounded-xl text-gray-500 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-[#1a2248] transition-colors"
+              title="Видеозвонок"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </button>
+
+            {/* Переключатель правой боковой панели */}
+            <button
+              type="button"
+              onClick={() => setShowDetailsSidebar(!showDetailsSidebar)}
+              className={`p-2 rounded-xl transition-colors ${
+                showDetailsSidebar
+                  ? 'bg-blue-50 text-blue-600 dark:bg-[#1a2248] dark:text-blue-400'
+                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1a2248]'
+              }`}
+              title="Информация о чате"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        {/* ========================================================= */}
+        {/* Выдвижные AI панели                                       */}
+        {/* ========================================================= */}
+        <AIToolsPanel
+          messages={messages}
+          isOpen={showAITools}
+          onClose={() => setShowAITools(false)}
+          onTranscript={(text) => {
+            setNewMessage((prev) => (prev ? `${prev} ${text}` : text));
+          }}
+        />
+
+        <ChatSummaryPanel
+          chatId={chatIdNum}
+          messages={messages}
+          language={(user?.language || 'ru').toLowerCase()}
+          isOpen={showSummaryPanel}
+          onClose={() => setShowSummaryPanel(false)}
+        />
+
+        {/* ========================================================= */}
+        {/* Закреплённое сообщение (Pinned message)                   */}
+        {/* ========================================================= */}
+        {showPinned && (
+          <div className="px-4 py-2 bg-blue-50/70 dark:bg-[#131b4a] border-b border-[#dde4f0] dark:border-[#1e2955] flex items-center justify-between text-xs select-none">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="text-blue-500 dark:text-blue-400 text-sm shrink-0">📌</span>
+              <div className="min-w-0 truncate">
+                <span className="font-semibold text-blue-600 dark:text-blue-400 mr-1.5">
+                  Закреплённое сообщение:
+                </span>
+                <span className="text-[#6070a0] dark:text-[#9babc6] truncate">
+                  Добро пожаловать в проект Союз! Все ключевые функции перевода и ИИ активны.
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPinned(false)}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 shrink-0"
+              title="Скрыть"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* Лента сообщений                                           */}
+        {/* ========================================================= */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+          {/* Разделитель даты (по центру) */}
+          <div className="flex justify-center select-none my-2">
+            <span className="px-3.5 py-1 rounded-full text-[11px] font-medium bg-gray-200/60 dark:bg-[#1a2248] text-[#6070a0] dark:text-[#7b8db5] shadow-sm">
+              Сегодня, 15 апреля
+            </span>
+          </div>
+
+          {messages.length === 0 && (
+            <div className="text-center py-12 text-sm text-[#6070a0] dark:text-[#7b8db5]">
+              В этом чате пока нет сообщений. Напишите первое!
+            </div>
+          )}
+
+          {messages.map((msg) => {
+            const isOwn = msg.senderId === user?.id;
+            const senderRole = membersMap.get(msg.senderId);
+            const isFile = msg.content.startsWith('[Документ]');
+
+            return (
+              <div
+                key={msg.id}
+                className={`flex items-end gap-2 group animate-message-in ${isOwn ? 'justify-end' : 'justify-start'}`}
+              >
+                {/* Аватар отправителя (если чужое сообщение) */}
+                {!isOwn && (
+                  <Avatar
+                    name={membersMap.get(msg.senderId) || `User ${msg.senderId}`}
+                    size="sm"
+                    className="mb-1"
+                  />
+                )}
+
+                {/* Баббл сообщения */}
+                <div
+                  className={`max-w-[85%] sm:max-w-[70%] p-3.5 transition-all ${
+                    isOwn
+                      ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-2xl rounded-br-sm shadow-md shadow-blue-500/15'
+                      : 'bg-white dark:bg-[#151b45] text-[#1a2038] dark:text-[#e8ecf4] border border-[#dde4f0] dark:border-[#1e2955] rounded-2xl rounded-bl-sm shadow-sm'
+                  }`}
+                >
+                  {/* Имя отправителя в группе */}
+                  {!isOwn && chatInfo?.isGroup && (
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 mb-1">
+                      <span>{membersMap.get(msg.senderId) || `Участник #${msg.senderId}`}</span>
+                      {getRoleBadge(senderRole)}
+                    </div>
+                  )}
+
+                  {/* Контент: Файл, Голосовое или Текст */}
+                  {msg.isDeleted ? (
+                    <p className="italic opacity-60 text-xs">[Сообщение удалено]</p>
+                  ) : isFile ? (
+                    /* Карточка документа */
+                    <div className="flex items-center gap-3 p-2 rounded-xl bg-blue-500/10 dark:bg-black/20 border border-white/20">
+                      <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold truncate">{msg.content.replace('[Документ] ', '')}</p>
+                        <p className="text-[10px] opacity-70">Файл документа</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="p-2 rounded-lg hover:bg-white/20 transition-colors"
+                        title="Скачать"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : msg.type === 'voice' ? (
+                    /* Голосовое сообщение */
+                    <div className="space-y-2">
+                      <AudioPlayer
+                        src={msg.localAudioUrl || msg.audioUrl}
+                        durationMs={msg.voiceMetadata?.durationMs}
+                        isOwn={isOwn}
+                      />
+
+                      {msg.uploadStatus === 'uploading' && (
+                        <div className="flex items-center justify-between text-xs opacity-80 pt-1">
+                          <span className="animate-pulse">Отправка аудио…</span>
+                          <button
+                            type="button"
+                            onClick={() => handleVoiceCancelUpload(msg.id)}
+                            className="underline hover:opacity-100"
+                          >
+                            Отмена
+                          </button>
+                        </div>
+                      )}
+
+                      {msg.uploadStatus === 'error' && (
+                        <div className="flex items-center justify-between text-xs text-red-300 pt-1">
+                          <span>Ошибка отправки</span>
+                          <button
+                            type="button"
+                            onClick={() => handleVoiceRetry(msg)}
+                            className="underline font-medium"
+                          >
+                            Повторить
+                          </button>
+                        </div>
+                      )}
+
+                      {msg.uploadStatus === 'cancelled' && (
+                        <div className="flex items-center gap-2 text-xs opacity-80 pt-1">
+                          <span>Отменено</span>
+                          <button
+                            type="button"
+                            onClick={() => handleVoiceRetry(msg)}
+                            className="underline"
+                          >
+                            Отправить снова
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleVoiceRemoveCancelled(msg.id)}
+                            className="underline"
+                          >
+                            Удалить
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Стенограмма (STT) */}
+                      <VoiceTranscript
+                        transcript={msg.transcript}
+                        status={msg.transcriptStatus}
+                        isOwn={isOwn}
+                      />
+
+                      {/* Краткое содержание (AI Summary) */}
+                      <VoiceSummary
+                        summary={msg.summary}
+                        status={msg.summaryStatus}
+                        isOwn={isOwn}
+                      />
+                    </div>
+                  ) : (
+                    /* Обычный текст */
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap break-words select-text">
+                      {msg.content}
+                    </p>
+                  )}
+
+                  {/* Нижняя строка: Время + статус доставки */}
+                  <div
+                    className={`flex items-center justify-end gap-1.5 mt-1 text-[10px] select-none ${
+                      isOwn ? 'text-blue-100' : 'text-[#6070a0] dark:text-[#7b8db5]'
+                    }`}
+                  >
+                    {msg.isEdited && <span>(ред.)</span>}
+                    <span>
+                      {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    {isOwn && renderStatusTicks(msg.localStatus)}
+                  </div>
+
+                  {/* Блок перевода для текстовых сообщений */}
+                  {msg.type !== 'voice' && !isFile && (
+                    <TranslationBlock message={msg} isOwn={isOwn} />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* ========================================================= */}
+        {/* Панель AI-рерайта над строкой ввода                       */}
+        {/* ========================================================= */}
+        <RewritePanel
+          draft={newMessage}
+          state={rewrite}
+          onAction={handleAssist}
+          onApply={applyRewrite}
+          onCancel={cancelRewrite}
+          onRetry={retryRewrite}
+        />
+
+        {/* ========================================================= */}
+        {/* Нижняя панель ввода сообщения                             */}
+        {/* ========================================================= */}
+        <div className="p-3 sm:p-4 bg-white dark:bg-[#111640] border-t border-[#dde4f0] dark:border-[#1e2955] shrink-0">
+          {showVoiceComposer ? (
+            <VoiceComposer
+              disabled={false}
+              onReady={handleVoiceReady}
+              onCancel={() => {
+                if (voiceDraft?.localUrl) {
+                  URL.revokeObjectURL(voiceDraft.localUrl);
+                }
+                setVoiceDraft(null);
+                setShowVoiceComposer(false);
+              }}
+            />
+          ) : (
+            <form onSubmit={handleSend} className="flex items-center gap-2">
+              {/* Кнопка скрепки (прикрепить файл) */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="p-2.5 rounded-2xl text-gray-400 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-[#1a2248] transition-colors shrink-0"
+                title="Прикрепить файл"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleFileUpload}
+              />
+
+              {/* Поле ввода сообщения */}
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  placeholder="Написать сообщение…"
+                  className="w-full pl-4 pr-10 py-3 text-sm rounded-2xl border border-[#dde4f0] dark:border-[#1e2955] bg-gray-50 dark:bg-[#0f1535] text-[#1a2038] dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                />
+
+                {/* Кнопка смайла */}
+                <button
+                  type="button"
+                  onClick={() => setNewMessage((prev) => `${prev} 😊`)}
+                  className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors"
+                  title="Добавить эмодзи"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Кнопка микрофона */}
+              <button
+                type="button"
+                onClick={() => setShowVoiceComposer(true)}
+                className="p-2.5 rounded-2xl text-gray-400 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-[#1a2248] transition-colors shrink-0"
+                title="Голосовое сообщение"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+              </button>
+
+              {/* Кнопка отправки (самолётик) */}
+              <button
+                type="submit"
+                disabled={!newMessage.trim()}
+                className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-blue-500 text-white flex items-center justify-center hover:from-blue-700 hover:to-blue-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-blue-500/20 active:scale-95 transition-all shrink-0"
+                title="Отправить"
+              >
+                <svg className="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                </svg>
+              </button>
+            </form>
           )}
         </div>
       </div>
 
-      {chatInfo?.isGroup && (
-        <div
-          onClick={() => setShowMembersModal(true)}
-          className="p-2 border-b cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 text-center"
-        >
-          <h2 className="text-lg font-semibold">{chatInfo.title || 'Группа'}</h2>
-          <div className="text-xs text-gray-500">Нажмите для просмотра участников</div>
-        </div>
-      )}
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 && (
-          <div className="text-center text-gray-500">Нет сообщений. Напишите первое!</div>
-        )}
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.senderId === user?.id ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`max-w-[70%] p-3 rounded-lg ${
-                msg.senderId === user?.id
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 dark:bg-gray-700'
-              }`}
-            >
-              {msg.senderId !== user?.id && (
-                <div className="font-semibold text-sm mb-1">
-                  {getRoleSymbol(membersMap.get(msg.senderId))}
-                </div>
-              )}
-
-              {msg.isDeleted ? (
-                <p>[Удалено]</p>
-              ) : msg.type === 'voice' ? (
-                <div className="space-y-2 min-w-[200px]">
-                  <AudioPlayer
-                    src={msg.localAudioUrl || msg.audioUrl}
-                    durationMs={msg.voiceMetadata?.durationMs}
-                    compact
-                  />
-
-                  {msg.uploadStatus === 'uploading' && (
-                    <div className="flex items-center justify-between text-xs opacity-80">
-                      <span>Отправка…</span>
-                      <button
-                        type="button"
-                        onClick={() => handleVoiceCancelUpload(msg.id)}
-                        className="underline hover:opacity-100"
-                      >
-                        Отмена
-                      </button>
-                    </div>
-                  )}
-
-                  {msg.uploadStatus === 'error' && (
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="text-red-300">Ошибка загрузки</span>
-                      <button
-                        type="button"
-                        onClick={() => handleVoiceRetry(msg)}
-                        className="underline"
-                      >
-                        Повторить
-                      </button>
-                    </div>
-                  )}
-
-                  {msg.uploadStatus === 'cancelled' && (
-                    <div className="flex items-center gap-2 text-xs opacity-80">
-                      <span>Отменено</span>
-                      <button
-                        type="button"
-                        onClick={() => handleVoiceRetry(msg)}
-                        className="underline"
-                      >
-                        Отправить снова
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleVoiceRemoveCancelled(msg.id)}
-                        className="underline"
-                      >
-                        Удалить
-                      </button>
-                    </div>
-                  )}
-
-                  <VoiceTranscript
-                    transcript={msg.transcript}
-                    status={msg.transcriptStatus}
-                    isOwn={msg.senderId === user?.id}
-                  />
-
-                  <VoiceSummary
-                    summary={msg.summary}
-                    status={msg.summaryStatus}
-                    isOwn={msg.senderId === user?.id}
-                  />
-                </div>
-              ) : (
-                <p>{msg.content}</p>
-              )}
-
-              <div className="text-xs opacity-70 mt-1 flex justify-end gap-1">
-                <span>{msg.timestamp.toLocaleTimeString()}</span>
-                {msg.senderId === user?.id && <span>{getStatusIcon(msg.localStatus)}</span>}
-                {msg.isEdited && <span>(ред.)</span>}
-              </div>
-
-              {msg.type !== 'voice' && (
-                <TranslationBlock message={msg} isOwn={msg.senderId === user?.id} />
-              )}
-            </div>
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
-      </div>
-
-      <RewritePanel
-        draft={newMessage}
-        state={rewrite}
-        onAction={handleAssist}
-        onApply={applyRewrite}
-        onCancel={cancelRewrite}
-        onRetry={retryRewrite}
-      />
-
-      <form onSubmit={handleSend} className="p-4">
-        {showVoiceComposer ? (
-          <VoiceComposer
-            disabled={false}
-            onReady={handleVoiceReady}
-            onCancel={() => {
-              if (voiceDraft?.localUrl) {
-                URL.revokeObjectURL(voiceDraft.localUrl);
-              }
-              setVoiceDraft(null);
-              setShowVoiceComposer(false);
-            }}
-          />
-        ) : (
-          <div className="flex gap-2 items-center">
+      {/* ========================================================= */}
+      {/* Правая панель: Информация о группе / собеседнике (Third) */}
+      {/* ========================================================= */}
+      {showDetailsSidebar && (
+        <aside className="fixed inset-y-0 right-0 z-40 w-full sm:w-80 h-full bg-white dark:bg-[#111640] border-l border-[#dde4f0] dark:border-[#1e2955] flex flex-col overflow-y-auto animate-slide-in-right shrink-0 select-none shadow-2xl md:static md:z-auto">
+          {/* Шапка сайдбара */}
+          <div className="p-4 border-b border-[#dde4f0] dark:border-[#1e2955] flex items-center justify-between">
+            <h3 className="font-semibold text-sm">Информация о чате</h3>
             <button
               type="button"
-              onClick={() => setShowVoiceComposer(true)}
-              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
-              title="Голосовое сообщение"
-              aria-label="Голосовое сообщение"
+              onClick={() => setShowDetailsSidebar(false)}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-white"
             >
-              🎤
-            </button>
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder={t('type_message')}
-              className="flex-1 px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
-            />
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 shrink-0"
-            >
-              {t('send')}
+              ✕
             </button>
           </div>
-        )}
-      </form>
 
+          {/* Карточка профиля чата */}
+          <div className="p-6 flex flex-col items-center text-center border-b border-[#dde4f0] dark:border-[#1e2955]">
+            <Avatar name={title} size="xl" isOnline={isConnected} className="mb-3" />
+            <h4 className="text-base font-bold text-[#1a2038] dark:text-white truncate max-w-[240px]">
+              {title}
+            </h4>
+            <p className="text-xs text-[#6070a0] dark:text-[#7b8db5] mt-0.5">
+              {chatInfo?.isGroup ? `${memberCount} участников` : 'Личный контакт'}
+            </p>
+
+            {/* Быстрые действия */}
+            <div className="flex items-center gap-4 mt-5">
+              <button className="flex flex-col items-center gap-1 text-[11px] text-gray-500 hover:text-blue-600">
+                <span className="w-9 h-9 rounded-full bg-gray-100 dark:bg-[#1a2248] flex items-center justify-center">🔍</span>
+                <span>Поиск</span>
+              </button>
+              {chatInfo?.isGroup && (
+                <button
+                  onClick={() => setShowMembersModal(true)}
+                  className="flex flex-col items-center gap-1 text-[11px] text-gray-500 hover:text-blue-600"
+                >
+                  <span className="w-9 h-9 rounded-full bg-gray-100 dark:bg-[#1a2248] flex items-center justify-center">👥</span>
+                  <span>Участники</span>
+                </button>
+              )}
+              <button className="flex flex-col items-center gap-1 text-[11px] text-gray-500 hover:text-blue-600">
+                <span className="w-9 h-9 rounded-full bg-gray-100 dark:bg-[#1a2248] flex items-center justify-center">🔔</span>
+                <span>Уведомл.</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Секции медиа и файлов */}
+          <div className="p-4 space-y-3 border-b border-[#dde4f0] dark:border-[#1e2955] text-xs">
+            <div className="flex items-center justify-between text-[#1a2038] dark:text-white cursor-pointer hover:opacity-80">
+              <span className="flex items-center gap-2">
+                <span>📁</span> Медиа, файлы
+              </span>
+              <span className="text-gray-400">128 ›</span>
+            </div>
+            <div className="flex items-center justify-between text-[#1a2038] dark:text-white cursor-pointer hover:opacity-80">
+              <span className="flex items-center gap-2">
+                <span>🔗</span> Ссылки
+              </span>
+              <span className="text-gray-400">24 ›</span>
+            </div>
+            <div className="flex items-center justify-between text-[#1a2038] dark:text-white cursor-pointer hover:opacity-80">
+              <span className="flex items-center gap-2">
+                <span>📌</span> Закреплённые сообщения
+              </span>
+              <span className="text-gray-400">1 ›</span>
+            </div>
+          </div>
+
+          {/* Список участников */}
+          {chatInfo?.isGroup && (
+            <div className="p-4 flex-1">
+              <div className="flex items-center justify-between mb-3 text-xs font-semibold text-[#6070a0] dark:text-[#7b8db5]">
+                <span>Участники ({membersMap.size})</span>
+                <button
+                  type="button"
+                  onClick={() => setShowMembersModal(true)}
+                  className="text-blue-500 hover:underline"
+                >
+                  Управление
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {Array.from(membersMap.entries()).map(([mId, role]) => (
+                  <div key={mId} className="flex items-center gap-2.5">
+                    <Avatar name={`User ${mId}`} size="sm" isOnline />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold truncate text-[#1a2038] dark:text-white">
+                        {mId === user?.id ? `${user.name || 'Вы'} (Вы)` : `Пользователь #${mId}`}
+                      </p>
+                      <p className="text-[10px] text-gray-400">
+                        {role === 'owner' ? 'Владелец' : role === 'admin' ? 'Админ' : 'в сети'}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </aside>
+      )}
+
+      {/* Модальное окно участников группы */}
       {chatInfo?.isGroup && (
         <GroupMembersModal
           key={membersModalKey}

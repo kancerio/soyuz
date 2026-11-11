@@ -10,6 +10,7 @@ interface AudioPlayerProps {
   /** Длительность из metadata (мс), если известна заранее */
   durationMs?: number | null;
   compact?: boolean;
+  isOwn?: boolean;
   className?: string;
 }
 
@@ -17,10 +18,23 @@ type PlayerStatus = 'idle' | 'loading' | 'ready' | 'playing' | 'paused' | 'error
 
 const SKIP_SEC = 5;
 
+// Генерация высоты столбиков волны псевдо-случайно на основе длительности
+function generateWaveBars(count = 28) {
+  const bars = [];
+  for (let i = 0; i < count; i++) {
+    // гармоническая кривая волны
+    const sinVal = Math.sin((i / count) * Math.PI * 3.5);
+    const height = Math.max(20, Math.min(100, Math.floor(Math.abs(sinVal) * 80 + (i % 3) * 10 + 15)));
+    bars.push(height);
+  }
+  return bars;
+}
+
 export default function AudioPlayer({
   src,
   durationMs: durationMsProp,
   compact = false,
+  isOwn = false,
   className = '',
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -28,10 +42,11 @@ export default function AudioPlayer({
   const [currentMs, setCurrentMs] = useState(0);
   const [durationMs, setDurationMs] = useState(durationMsProp ?? 0);
   const [errorText, setErrorText] = useState<string | null>(null);
-  /** Реальный src для <audio>: blob после JWT-fetch или исходный blob:/http */
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
+  const [waveBars] = useState(() => generateWaveBars(compact ? 20 : 32));
 
   const displayDuration = durationMs > 0 ? durationMs : durationMsProp ?? 0;
+  const progressRatio = displayDuration > 0 ? Math.min(1, currentMs / displayDuration) : 0;
 
   // Сброс при смене src + JWT-resolve для /messages/voice/
   useEffect(() => {
@@ -90,7 +105,7 @@ export default function AudioPlayer({
     };
   }, [src, durationMsProp]);
 
-  // Подписка на события audio при смене resolvedSrc
+  // Подписка на события audio
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !resolvedSrc) return;
@@ -100,7 +115,7 @@ export default function AudioPlayer({
       if (isFinite(d) && d > 0) {
         setDurationMs(Math.round(d * 1000));
       }
-      setStatus((s) => (s === 'playing' ? s : 'ready'));
+      setStatus('ready');
     };
 
     const onTimeUpdate = () => {
@@ -108,20 +123,14 @@ export default function AudioPlayer({
     };
 
     const onPlay = () => setStatus('playing');
-    const onPause = () => {
-      setStatus((s) => (s === 'error' ? s : 'paused'));
-    };
+    const onPause = () => setStatus('paused');
     const onEnded = () => {
       setStatus('ready');
       setCurrentMs(0);
-      audio.currentTime = 0;
     };
     const onError = () => {
       setStatus('error');
-      setErrorText('Файл недоступен');
-    };
-    const onCanPlay = () => {
-      setStatus((s) => (s === 'playing' ? s : 'ready'));
+      setErrorText('Ошибка воспроизведения');
     };
 
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
@@ -130,9 +139,6 @@ export default function AudioPlayer({
     audio.addEventListener('pause', onPause);
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
-    audio.addEventListener('canplay', onCanPlay);
-
-    audio.load();
 
     return () => {
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
@@ -141,44 +147,32 @@ export default function AudioPlayer({
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('error', onError);
-      audio.removeEventListener('canplay', onCanPlay);
     };
   }, [resolvedSrc]);
 
-  const togglePlay = useCallback(async () => {
+  const togglePlay = useCallback(() => {
     const audio = audioRef.current;
-    if (!audio || !resolvedSrc || status === 'error') return;
+    if (!audio || !resolvedSrc) return;
 
-    try {
-      if (status === 'playing') {
-        audio.pause();
-      } else {
-        setStatus('loading');
-        await audio.play();
-      }
-    } catch {
-      setStatus('error');
-      setErrorText('Файл недоступен');
+    if (status === 'playing') {
+      audio.pause();
+    } else {
+      audio.play().catch(() => {
+        setStatus('error');
+        setErrorText('Воспроизведение заблокировано');
+      });
     }
   }, [resolvedSrc, status]);
 
   const seekBy = useCallback(
     (deltaSec: number) => {
       const audio = audioRef.current;
-      if (!audio || !resolvedSrc || status === 'error') return;
-
-      const maxSec =
-        audio.duration && isFinite(audio.duration) && audio.duration > 0
-          ? audio.duration
-          : displayDuration > 0
-            ? displayDuration / 1000
-            : 0;
-
-      const next = Math.max(0, Math.min(maxSec, audio.currentTime + deltaSec));
-      audio.currentTime = next;
-      setCurrentMs(Math.round(next * 1000));
+      if (!audio || !resolvedSrc) return;
+      const target = Math.max(0, Math.min(audio.currentTime + deltaSec, (displayDuration || 0) / 1000));
+      audio.currentTime = target;
+      setCurrentMs(Math.round(target * 1000));
     },
-    [resolvedSrc, status, displayDuration],
+    [resolvedSrc, displayDuration]
   );
 
   const onSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -189,28 +183,35 @@ export default function AudioPlayer({
     setCurrentMs(value);
   };
 
+  const handleWaveClick = (index: number, total: number) => {
+    const audio = audioRef.current;
+    if (!audio || !displayDuration) return;
+    const ratio = index / total;
+    const targetMs = ratio * displayDuration;
+    audio.currentTime = targetMs / 1000;
+    setCurrentMs(targetMs);
+  };
+
   if (!src) {
     return (
-      <div className={`flex items-center gap-2 text-sm opacity-70 ${className}`}>
+      <div className={`flex items-center gap-2 text-xs opacity-70 ${className}`}>
         <span>🎤</span>
-        <span>Нет аудио</span>
+        <span>Нет аудиозаписи</span>
       </div>
     );
   }
 
   if (status === 'error') {
     return (
-      <div className={`flex items-center gap-2 text-sm ${className}`}>
-        <span className="text-red-400">⚠</span>
-        <span className="text-red-300">{errorText || 'Файл недоступен'}</span>
+      <div className={`flex items-center gap-2 text-xs p-2 rounded-xl bg-red-500/10 text-red-400 ${className}`}>
+        <span>⚠</span>
+        <span>{errorText || 'Файл недоступен'}</span>
       </div>
     );
   }
 
   return (
-    <div
-      className={`flex items-center gap-2 min-w-0 ${compact ? 'text-sm' : ''} ${className}`}
-    >
+    <div className={`flex items-center gap-3 select-none min-w-[220px] sm:min-w-[260px] ${className}`}>
       <audio
         ref={audioRef}
         src={resolvedSrc ?? undefined}
@@ -218,45 +219,63 @@ export default function AudioPlayer({
         className="hidden"
       />
 
-      <button
-        type="button"
-        onClick={() => seekBy(-SKIP_SEC)}
-        disabled={!resolvedSrc}
-        className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 disabled:opacity-50 text-xs"
-        aria-label={`Назад ${SKIP_SEC} секунд`}
-        title={`−${SKIP_SEC} с`}
-      >
-        ⏪
-      </button>
-
+      {/* Кнопка Play/Pause */}
       <button
         type="button"
         onClick={togglePlay}
         disabled={!resolvedSrc || (status === 'loading' && currentMs === 0)}
-        className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 disabled:opacity-50"
+        className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-sm transition-transform active:scale-95 disabled:opacity-50 ${
+          isOwn
+            ? 'bg-white text-blue-600 hover:bg-blue-50'
+            : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-500/20'
+        }`}
         aria-label={status === 'playing' ? 'Пауза' : 'Воспроизвести'}
       >
         {status === 'loading' && currentMs === 0 ? (
-          <span className="animate-pulse text-xs">…</span>
+          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
         ) : status === 'playing' ? (
-          <span>⏸</span>
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <rect x="6" y="4" width="4" height="16" rx="1.5" />
+            <rect x="14" y="4" width="4" height="16" rx="1.5" />
+          </svg>
         ) : (
-          <span>▶</span>
+          <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M5 3.868v16.264c0 .822.894 1.332 1.606.915l13.553-8.132a1.066 1.066 0 000-1.83L6.606 2.953C5.894 2.536 5 3.046 5 3.868z" />
+          </svg>
         )}
       </button>
 
-      <button
-        type="button"
-        onClick={() => seekBy(SKIP_SEC)}
-        disabled={!resolvedSrc}
-        className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 disabled:opacity-50 text-xs"
-        aria-label={`Вперёд ${SKIP_SEC} секунд`}
-        title={`+${SKIP_SEC} с`}
-      >
-        ⏩
-      </button>
+      {/* Звуковая волна / прогресс и таймер */}
+      <div className="flex-1 min-w-0 flex flex-col justify-center gap-1.5">
+        {/* Волна звуковых столбиков */}
+        <div className="flex items-center gap-1 h-7 cursor-pointer py-1" title="Перемотка">
+          {waveBars.map((barHeight, idx) => {
+            const barRatio = idx / waveBars.length;
+            const isPlayed = barRatio <= progressRatio;
 
-      <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+            return (
+              <div
+                key={idx}
+                onClick={() => handleWaveClick(idx, waveBars.length)}
+                style={{ height: `${barHeight}%` }}
+                className={`flex-1 min-w-[2px] rounded-full transition-all duration-100 ${
+                  isOwn
+                    ? isPlayed
+                      ? 'bg-white opacity-100'
+                      : 'bg-white/35 hover:bg-white/60'
+                    : isPlayed
+                    ? 'bg-blue-600 dark:bg-blue-400 opacity-100'
+                    : 'bg-gray-300 dark:bg-[#253265] hover:bg-gray-400'
+                }`}
+              />
+            );
+          })}
+        </div>
+
+        {/* Скрытый диапазон для доступности */}
         <input
           type="range"
           min={0}
@@ -264,12 +283,38 @@ export default function AudioPlayer({
           value={Math.min(currentMs, displayDuration || 0)}
           onChange={onSeek}
           disabled={!displayDuration}
-          className="w-full h-1.5 accent-white cursor-pointer disabled:opacity-40"
-          aria-label="Прогресс"
+          className="sr-only"
+          aria-label="Прогресс воспроизведения"
         />
-        <div className="flex justify-between text-[10px] opacity-70 font-mono tabular-nums">
+
+        {/* Время: текущее / общее */}
+        <div
+          className={`flex items-center justify-between text-[11px] font-mono tabular-nums leading-none ${
+            isOwn ? 'text-white/80' : 'text-[#6070a0] dark:text-[#7b8db5]'
+          }`}
+        >
           <span>{formatDuration(currentMs)}</span>
-          <span>{formatDuration(displayDuration)}</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => seekBy(-SKIP_SEC)}
+              disabled={!resolvedSrc}
+              className="hover:opacity-100 opacity-60 text-[10px]"
+              title="Назад на 5 секунд"
+            >
+              -5с
+            </button>
+            <button
+              type="button"
+              onClick={() => seekBy(SKIP_SEC)}
+              disabled={!resolvedSrc}
+              className="hover:opacity-100 opacity-60 text-[10px]"
+              title="Вперед на 5 секунд"
+            >
+              +5с
+            </button>
+            <span>{formatDuration(displayDuration)}</span>
+          </div>
         </div>
       </div>
     </div>

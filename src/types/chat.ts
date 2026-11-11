@@ -36,6 +36,7 @@ export interface Message {
   senderId: number;
   chatId: number;
   timestamp: Date;
+  createdAt?: Date | string;
   isEdited?: boolean;
   isDeleted?: boolean;
 
@@ -71,6 +72,7 @@ export interface Chat {
   id: number;
   title: string | null;
   isGroup: boolean;
+  isChannel?: boolean;
   createdAt: Date;
 }
 

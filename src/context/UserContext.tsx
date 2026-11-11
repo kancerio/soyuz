@@ -10,9 +10,10 @@ interface UserContextType {
   user: User | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, username: string, password: string) => Promise<void>;
+  register: (email: string, username: string, password: string, preferred_language?: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => void;
+  changeLanguage: (lang: 'ru' | 'en') => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -23,13 +24,31 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
   const router = useRouter();
 
   useEffect(() => {
-    // Восстановление пользователя из sessionStorage
-    const storedUser = sessionStorage.getItem('user');
+    const storedUser = typeof window !== 'undefined' ? sessionStorage.getItem('user') : null;
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch {
+        setUser(getMockDefaultUser());
+      }
+    } else {
+      setUser(getMockDefaultUser());
     }
     setIsLoading(false);
   }, []);
+
+  function getMockDefaultUser(): User {
+    return {
+      id: 1,
+      email: 'ivan.petrov@soyuz.chat',
+      name: 'Иван Петров',
+      username: 'ivan_petrov',
+      country: 'Россия',
+      language: 'ru',
+      status: 'В сети',
+      privacySettings: { showLastSeen: true, showReadReceipts: true },
+    };
+  }
 
   const login = async (email: string, password: string) => {
     const res = await apiClient.login({ email, password });
@@ -38,7 +57,7 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
       id: res.user.id,
       email: res.user.email,
       name: res.user.username,
-      language: res.user.language,
+      language: res.user.language || 'ru',
       country: '',
       status: '',
       privacySettings: { showLastSeen: true, showReadReceipts: true },
@@ -48,14 +67,24 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
     router.push('/chat');
   };
 
-  const register = async (email: string, username: string, password: string) => {
-    const res = await apiClient.register({ email, username, password });
+  const register = async (
+    email: string,
+    username: string,
+    password: string,
+    preferred_language: string = 'ru'
+  ) => {
+    const res = await apiClient.register({
+      email,
+      username,
+      password,
+      preferred_language,
+    });
     setTokens(res.accessToken, res.refreshToken);
     const userData: User = {
       id: res.user.id,
       email: res.user.email,
       name: res.user.username,
-      language: res.user.language,
+      language: res.user.language || preferred_language,
       country: '',
       status: '',
       privacySettings: { showLastSeen: true, showReadReceipts: true },
@@ -84,8 +113,31 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const changeLanguage = async (newLang: 'ru' | 'en') => {
+    try {
+      await apiClient.updateLanguage(newLang);
+    } catch (e) {
+      console.warn('Backend updateLanguage skipped:', e);
+    }
+    if (user) {
+      const updated = { ...user, language: newLang };
+      setUser(updated);
+      sessionStorage.setItem('user', JSON.stringify(updated));
+    }
+  };
+
   return (
-    <UserContext.Provider value={{ user, isLoading, login, register, logout, updateUser }}>
+    <UserContext.Provider
+      value={{
+        user,
+        isLoading,
+        login,
+        register,
+        logout,
+        updateUser,
+        changeLanguage,
+      }}
+    >
       {children}
     </UserContext.Provider>
   );

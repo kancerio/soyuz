@@ -34,7 +34,7 @@ export class AuthService {
     email: registerDto.email,
     username: registerDto.username,
     password: hashedPassword,
-    preferred_language: registerDto.preferred_language || 'en', // если не указан — 'en'
+    preferred_language: registerDto.preferred_language || 'ru', // если не указан — 'ru'
   });
 
   // Генерируем токены

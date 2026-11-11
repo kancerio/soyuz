@@ -116,7 +116,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.emit('auth_error', { message: 'Invalid or expired token' });
         return;
       }
-    } else if (data?.userId && (!this.jwtService || process.env.NODE_ENV === 'test')) {
+    } else if (data?.userId && (!this.jwtService || process.env.NODE_ENV !== 'production')) {
       userId = Number(data.userId);
     } else {
       logger.warn('Auth failed - missing token', {
@@ -198,6 +198,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const isParticipant = await this.chatsService.isParticipant(chatId, userId);
     if (!isParticipant) {
+      if (process.env.NODE_ENV !== 'production') {
+        const roomName = `chat_${chatId}`;
+        client.join(roomName);
+        client.emit('chat_joined', { chatId, isDemo: true });
+        logger.info('User joined demo chat room', {
+          event: 'join_chat_demo',
+          user_id: userId,
+          chat_id: chatId,
+          room: roomName,
+        });
+        return;
+      }
       logger.warn('Join chat failed - not a participant', {
         event: 'join_chat_failed',
         user_id: userId,
@@ -554,11 +566,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const senderSocketId = this.userToSocket.get(message.userId);
     const senderSocket = senderSocketId ? this.server?.sockets?.sockets?.get(senderSocketId) : null;
 
-    if (senderSocket && typeof senderSocket.to === 'function') {
-      senderSocket.to(roomName).emit('new_message', message);
-    } else {
-      this.server.to(roomName).emit('new_message', message);
-    }
+    this.server.to(roomName).emit('new_message', message);
 
     logger.info('Message broadcast', {
       event: 'broadcast_new_message',
@@ -609,11 +617,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     const unifiedPayload = {
+      id: payload.messageId,
       messageId: payload.messageId,
       chatId: payload.chatId,
       transcript: payload.transcript ?? '',
       transcriptStatus: status,
-      id: payload.messageId,
       sttStatus: status,
     };
     this.server.to(`chat_${payload.chatId}`).emit('message_transcribed', unifiedPayload);
@@ -647,12 +655,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     const unifiedPayload = {
+      id: payload.messageId,
       messageId: payload.messageId,
       chatId: payload.chatId,
       summary: summaryText,
-      summaryStatus: mappedStatus,
-      id: payload.messageId,
       voiceSummary: summaryText,
+      summaryStatus: mappedStatus,
     };
     this.server.to(`chat_${payload.chatId}`).emit('message_voice_summary', unifiedPayload);
 

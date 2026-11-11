@@ -4,9 +4,10 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
 import { useUser } from '@/context/UserContext';
+import { Button, Input } from '@/components/ui';
 
 export default function RegisterForm() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { register } = useUser();
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -19,9 +20,13 @@ export default function RegisterForm() {
     setError('');
     setLoading(true);
     try {
-      await register(email, username, password);
+      await register(email, username, password, language);
     } catch (err: any) {
-      setError(err.message);
+      if (err.message?.includes('Failed to fetch') || err.message?.includes('fetch')) {
+        setError('Не удалось подключиться к серверу (localhost:3001). Убедитесь, что бэкенд запущен.');
+      } else {
+        setError(err.message || 'Ошибка регистрации. Попробуйте другие данные.');
+      }
     } finally {
       setLoading(false);
     }
@@ -29,50 +34,80 @@ export default function RegisterForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium mb-1">Email *</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Username *</label>
-        <input
-          type="text"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">{t('password')} *</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-700"
-          required
-        />
-      </div>
-      {error && <p className="text-red-500 text-sm">{error}</p>}
-      <button
+      <Input
+        label={t('email_label')}
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="name@example.com"
+        required
+        leftIcon={
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+        }
+      />
+
+      <Input
+        label={t('username_label')}
+        type="text"
+        value={username}
+        onChange={(e) => setUsername(e.target.value)}
+        placeholder="@username"
+        required
+        leftIcon={
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+        }
+      />
+
+      <Input
+        label={t('password_label')}
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        placeholder="••••••••"
+        required
+        leftIcon={
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+        }
+      />
+
+      {error && (
+        <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 text-xs flex items-start gap-2 animate-fade-in">
+          <svg className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span className="leading-relaxed">{error}</span>
+        </div>
+      )}
+
+      <Button
         type="submit"
-        disabled={loading}
-        className="w-full bg-green-600 text-white py-2 rounded-md hover:bg-green-700 disabled:opacity-50"
+        variant="primary"
+        size="md"
+        fullWidth
+        isLoading={loading}
+        className="mt-2 py-3"
       >
-        {loading ? '...' : t('register')}
-      </button>
-      <p className="text-center text-sm">
-        {t('have_account')}{' '}
-        <Link href="/login" className="text-blue-600 hover:underline">
-          {t('login')}
-        </Link>
-      </p>
+        {t('create_account')}
+      </Button>
+
+      <div className="pt-2 text-center">
+        <div className="relative flex py-2 items-center">
+          <div className="flex-grow border-t border-gray-200 dark:border-gray-800" />
+          <span className="flex-shrink mx-3 text-xs text-gray-400">
+            {t('have_account')}{' '}
+            <Link href="/login" className="text-blue-500 hover:text-blue-600 dark:hover:text-blue-400 font-medium">
+              {t('login_button')}
+            </Link>
+          </span>
+          <div className="flex-grow border-t border-gray-200 dark:border-gray-800" />
+        </div>
+      </div>
     </form>
   );
 }

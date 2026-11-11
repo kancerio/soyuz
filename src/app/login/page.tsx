@@ -1,11 +1,65 @@
+'use client';
+
 import LoginForm from '@/components/auth/LoginForm';
+import SoyuzLogo from '@/components/ui/SoyuzLogo';
+import ThemeToggle from '@/components/ui/ThemeToggle';
+import LanguageToggle from '@/components/ui/LanguageToggle';
+import { useLanguage } from '@/context/LanguageContext';
 
 export default function LoginPage() {
+  const { t } = useLanguage();
+
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="w-full max-w-md p-8 border rounded shadow-md">
-        <h1 className="text-2xl font-bold mb-6 text-center">Вход в Soyuz</h1>
+    <div className="relative min-h-screen w-full max-w-full min-w-0 flex flex-col items-center justify-center p-4 overflow-hidden bg-gradient-to-b from-[#eef4ff] to-[#f7f9ff] dark:from-[#080c1d] dark:to-[#0f1535]">
+      {/* Кнопки смены языка и темы в правом верхнем углу */}
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        <LanguageToggle variant="pill" />
+        <ThemeToggle />
+      </div>
+
+      {/* Фоновые космические орбиты */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden max-w-full">
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] h-[320px] sm:w-[800px] sm:h-[800px] rounded-full border border-blue-400/15 dark:border-blue-500/10 -rotate-12 pointer-events-none" />
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[360px] h-[220px] sm:w-[1100px] sm:h-[500px] rounded-full border border-sky-400/20 dark:border-blue-400/10 rotate-45 pointer-events-none" />
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 sm:w-96 sm:h-96 bg-blue-500/10 dark:bg-blue-600/15 rounded-full blur-3xl pointer-events-none" />
+        {/* Звёздочки */}
+        <span className="absolute top-[20%] left-[15%] text-blue-400/30 text-xs">✦</span>
+        <span className="absolute bottom-[25%] left-[20%] text-sky-400/40 text-sm">✧</span>
+        <span className="absolute top-[30%] right-[18%] text-blue-300/30 text-base">✦</span>
+        <span className="absolute bottom-[20%] right-[22%] text-indigo-400/40 text-xs">✧</span>
+      </div>
+
+      {/* Карточка авторизации */}
+      <div className="relative z-10 w-full max-w-[340px] sm:max-w-[420px] mx-auto rounded-3xl bg-white/90 dark:bg-[#111640]/90 border border-[#dde4f0] dark:border-[#1e2955] shadow-xl dark:shadow-2xl dark:shadow-black/40 backdrop-blur-md p-5 sm:p-8 animate-fade-in">
+        <div className="flex flex-col items-center text-center mb-6">
+          <SoyuzLogo size="lg" className="mb-3" />
+          <h1 className="text-2xl font-bold tracking-tight text-[#1a2038] dark:text-white">
+            {t('app_name')}
+          </h1>
+          <p className="text-xs text-[#6070a0] dark:text-[#7b8db5] mt-1">
+            {t('login_welcome_back')}
+          </p>
+        </div>
+
         <LoginForm />
+      </div>
+
+      {/* Преимущества футер */}
+      <div className="relative z-10 mt-8 flex flex-wrap items-center justify-center gap-2 sm:gap-6 px-4 text-xs text-[#6070a0] dark:text-[#7b8db5] select-none">
+        <div className="flex items-center gap-1.5">
+          <span className="text-amber-500">⚡</span>
+          <span>{t('feature_fast')}</span>
+        </div>
+        <span className="opacity-30">•</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-blue-500">🛡</span>
+          <span>{t('feature_secure')}</span>
+        </div>
+        <span className="opacity-30">•</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-rose-500">💙</span>
+          <span>{t('feature_convenient')}</span>
+        </div>
       </div>
     </div>
   );

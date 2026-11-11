@@ -356,13 +356,38 @@ export class TranslationService {
     let lastError: any;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        const response = await firstValueFrom(
-          this.httpService.post(`${this.aiBaseUrl}/summary`, payload, {
-            timeout: this.timeoutMs,
-          }),
-        );
+        let response;
+        try {
+          // Согласованный контракт: POST /summary
+          response = await firstValueFrom(
+            this.httpService.post(
+              `${this.aiBaseUrl}/summary`,
+              payload,
+              { timeout: this.timeoutMs },
+            ),
+          );
+        } catch (postErr: any) {
+          if (postErr.response?.status === 404 || postErr.response?.status === 422) {
+            // Фолбэк на /secretary
+            const combinedText = messages.map((m) => m.text).join('\n');
+            response = await firstValueFrom(
+              this.httpService.post(
+                `${this.aiBaseUrl}/secretary`,
+                { action: 'summary', details: combinedText },
+                { timeout: this.timeoutMs },
+              ),
+            );
+          } else {
+            throw postErr;
+          }
+        }
+
         const data = response?.data || {};
-        const summary = data.summary || data.result || '';
+        const summary =
+          data.summary ||
+          data.result ||
+          data.message ||
+          '';
         if (typeof summary !== 'string' || !summary.trim()) {
           throw new Error('AI summary response did not contain summary');
         }
