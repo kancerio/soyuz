@@ -69,11 +69,19 @@ describe('ChatsService', () => {
 
     it('возвращает существующий диалог вместо создания дубля', async () => {
       usersService.findOne.mockResolvedValue({ id: 1 });
-      mockPrivateChatLookup(existingChat as Chat);
+      const whereMock = jest.fn().mockReturnThis();
+      const getOneMock = jest.fn().mockResolvedValue(existingChat);
+      chatsRepo.createQueryBuilder.mockReturnValue({
+        innerJoin: jest.fn().mockReturnThis(),
+        where: whereMock,
+        getOne: getOneMock,
+      });
 
       const result = await service.createPrivateChat(1, 2);
 
       expect(result).toBe(existingChat);
+      // Колонка в БД camelCase (создана миграциями) — не snake_case
+      expect(whereMock).toHaveBeenCalledWith('chat."isGroup" = :isGroup', { isGroup: false });
       expect(chatsRepo.save).not.toHaveBeenCalled();
       expect(participantsRepo.save).not.toHaveBeenCalled();
     });

@@ -122,7 +122,7 @@ export class ChatsService implements OnApplicationBootstrap {
         'p2.chat_id = chat.id AND p2.user_id = :u2',
         { u2: userId2 },
       )
-      .where('chat.is_group = :isGroup', { isGroup: false })
+      .where('chat."isGroup" = :isGroup', { isGroup: false })
       .getOne();
 
     if (existing) {
