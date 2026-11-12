@@ -22,10 +22,12 @@ async function bootstrap() {
 
   app.enableCors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      // Разрешаем запросы без Origin (curl, same-origin, мобильные клиенты)
+      // и origin из allowlist; остальные — отклоняем.
+      if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        callback(null, true);
+        callback(new Error(`Origin ${origin} не разрешён CORS-политикой`));
       }
     },
     credentials: true,
