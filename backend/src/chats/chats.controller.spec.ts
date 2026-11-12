@@ -55,4 +55,13 @@ describe('ChatsController', () => {
     ).rejects.toThrow();
     expect(chatsServiceMock.getChatMembers).not.toHaveBeenCalled();
   });
+
+  it('removeMember passes the actor id to the service', async () => {
+    chatsServiceMock.removeParticipant.mockResolvedValue(undefined);
+
+    await expect(
+      controller.removeMember('7', '12', { user: { userId: 1 } }),
+    ).resolves.toEqual({ message: 'Участник исключён' });
+    expect(chatsServiceMock.removeParticipant).toHaveBeenCalledWith(7, 12, 1);
+  });
 });

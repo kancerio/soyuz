@@ -113,6 +113,17 @@ async leaveChat(@Param('chatId') chatId: string, @Request() req) {
   return { message: 'Вы вышли из чата' };
 }
 
+  // DELETE /chats/:chatId/members/:userId - исключить участника (owner/admin)
+  @Delete(':chatId/members/:userId')
+  async removeMember(
+    @Param('chatId') chatId: string,
+    @Param('userId') userId: string,
+    @Request() req,
+  ) {
+    await this.chatsService.removeParticipant(+chatId, +userId, req.user.userId);
+    return { message: 'Участник исключён' };
+  }
+
   // PATCH /chats/:chatId/members/:userId/role - изменить роль участника (только владелец)
   @Patch(':chatId/members/:userId/role')
   async changeRole(
