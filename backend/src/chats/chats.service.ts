@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, OnApplicationBootstrap } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Chat } from './chat.entity';
@@ -94,13 +94,39 @@ export class ChatsService implements OnApplicationBootstrap {
     return count > 0;
   }
 
-  // Создать личный чат
+  // Создать личный чат (без дублей: возвращает существующий диалог, если он уже есть)
   async createPrivateChat(userId1: number, userId2: number): Promise<Chat> {
+    if (userId1 === userId2) {
+      throw new BadRequestException('Нельзя создать диалог с самим собой');
+    }
+
     const user1 = await this.usersService.findOne(userId1);
     const user2 = await this.usersService.findOne(userId2);
 
     if (!user1 || !user2) {
       throw new NotFoundException('Пользователь не найден');
+    }
+
+    // Ищем существующий личный чат, где оба пользователя — участники
+    const existing = await this.chatsRepository
+      .createQueryBuilder('chat')
+      .innerJoin(
+        ChatParticipant,
+        'p1',
+        'p1.chat_id = chat.id AND p1.user_id = :u1',
+        { u1: userId1 },
+      )
+      .innerJoin(
+        ChatParticipant,
+        'p2',
+        'p2.chat_id = chat.id AND p2.user_id = :u2',
+        { u2: userId2 },
+      )
+      .where('chat.is_group = :isGroup', { isGroup: false })
+      .getOne();
+
+    if (existing) {
+      return existing;
     }
 
     const chat = this.chatsRepository.create({
