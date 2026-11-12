@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, UseGuards, Request, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, Patch, Body, UseGuards, Request, UnauthorizedException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { UsersService } from './users.service';
 
@@ -9,12 +9,8 @@ export class UsersController {
   @Get()
   @UseGuards(AuthGuard('jwt'))
   findAll() {
-    return this.usersService.findAll();
-  }
-
-  @Post()
-  create(@Body() createUserDto: { email: string; username: string; password: string }) {
-    return this.usersService.create(createUserDto);
+    // Только публичные поля: password/refreshToken не покидают сервер
+    return this.usersService.findAllPublic();
   }
 
   @Get('me')

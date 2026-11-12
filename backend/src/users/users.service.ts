@@ -15,6 +15,14 @@ export class UsersService {
     return this.usersRepository.find();
   }
 
+  // Список пользователей для клиента — без password и refreshToken
+  findAllPublic(): Promise<Pick<User, 'id' | 'username' | 'email' | 'preferred_language' | 'createdAt'>[]> {
+    return this.usersRepository.find({
+      select: ['id', 'username', 'email', 'preferred_language', 'createdAt'],
+      order: { id: 'ASC' },
+    });
+  }
+
   // Найти пользователя по ID
   findOne(id: number): Promise<User | null> {
     return this.usersRepository.findOneBy({ id });
@@ -50,4 +58,11 @@ export class UsersService {
   async findByRefreshToken(refreshToken: string): Promise<User | null> {
     return this.usersRepository.findOneBy({ refreshToken });
   }
+}
+
+// Вырезает чувствительные поля из пользователя перед отправкой клиенту
+export function toPublicUser(user: User | null | undefined): Partial<User> | undefined {
+  if (!user) return undefined;
+  const { password: _pw, refreshToken: _rt, ...safe } = user;
+  return safe;
 }
