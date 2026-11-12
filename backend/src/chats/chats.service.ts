@@ -19,28 +19,28 @@ export class ChatsService implements OnApplicationBootstrap {
     await this.ensureInitialChats();
   }
 
-  // Автоматический посев системных чатов при старте приложения
+  // Автоматический посев демо-чатов при старте (только по флагу SEED_DEMO_CHATS=true)
   async ensureInitialChats() {
+    if (process.env.SEED_DEMO_CHATS !== 'true') return;
+
     try {
       const initialChats = [
-        { id: 1, title: 'Разработка', isGroup: true },
-        { id: 2, title: 'Анна Петрова', isGroup: false },
-        { id: 3, title: 'Общий чат', isGroup: true },
-        { id: 4, title: 'Дизайн команда', isGroup: true },
-        { id: 5, title: 'Маркетинг', isGroup: true },
-        { id: 6, title: 'Техподдержка', isGroup: false },
-        { id: 7, title: 'Путешествия', isGroup: false },
-        { id: 8, title: 'Новости Союза', isGroup: true },
+        { title: 'Разработка', isGroup: true },
+        { title: 'Анна Петрова', isGroup: false },
+        { title: 'Общий чат', isGroup: true },
+        { title: 'Дизайн команда', isGroup: true },
+        { title: 'Маркетинг', isGroup: true },
+        { title: 'Техподдержка', isGroup: false },
+        { title: 'Путешествия', isGroup: false },
+        { title: 'Новости Союза', isGroup: true },
       ];
 
       for (const def of initialChats) {
-        const existing = await this.chatsRepository.findOne({ where: { id: def.id } });
+        const existing = await this.chatsRepository.findOne({
+          where: { title: def.title, isGroup: def.isGroup },
+        });
         if (!existing) {
-          const chat = this.chatsRepository.create({
-            id: def.id,
-            title: def.title,
-            isGroup: def.isGroup,
-          });
+          const chat = this.chatsRepository.create(def);
           await this.chatsRepository.save(chat);
         }
       }
