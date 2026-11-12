@@ -51,32 +51,10 @@ export class ChatsService implements OnApplicationBootstrap {
 
   // Получить все чаты пользователя
   async getUserChats(userId: number): Promise<Chat[]> {
-    let participants = await this.chatParticipantsRepository.find({
+    const participants = await this.chatParticipantsRepository.find({
       where: { userId },
       relations: ['chat'],
     });
-
-    // Если у пользователя еще нет чатов, автоматически подписываем его на системные чаты
-    if (participants.length === 0) {
-      const allChats = await this.chatsRepository.find();
-      if (allChats.length > 0) {
-        for (const chat of allChats) {
-          try {
-            await this.chatParticipantsRepository.save({
-              chatId: chat.id,
-              userId,
-              role: 'member',
-            });
-          } catch (e) {
-            // Игнорируем дубли
-          }
-        }
-        participants = await this.chatParticipantsRepository.find({
-          where: { userId },
-          relations: ['chat'],
-        });
-      }
-    }
 
     return participants
       .map((p) => p.chat)
@@ -108,29 +86,12 @@ export class ChatsService implements OnApplicationBootstrap {
     return participant ? participant.role : null;
   }
 
-  // Проверить, является ли пользователь участником чата (с автоприсоединением)
+  // Проверить, является ли пользователь участником чата
   async isParticipant(chatId: number, userId: number): Promise<boolean> {
     const count = await this.chatParticipantsRepository.count({
       where: { chatId, userId },
     });
-    if (count > 0) return true;
-
-    // Если чат существует — автоматически присоединяем пользователя
-    const chat = await this.chatsRepository.findOne({ where: { id: chatId } });
-    if (chat) {
-      try {
-        await this.chatParticipantsRepository.save({
-          chatId,
-          userId,
-          role: 'member',
-        });
-        return true;
-      } catch (e) {
-        return true;
-      }
-    }
-
-    return false;
+    return count > 0;
   }
 
   // Создать личный чат
