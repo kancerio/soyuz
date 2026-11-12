@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { Message } from './message.entity';
-import { UsersService } from '../users/users.service';
+import { UsersService, toPublicUser } from '../users/users.service';
 import { ChatsService } from '../chats/chats.service';
 import {
   TranslationService,
@@ -128,7 +128,10 @@ export class MessagesService {
       relations: ['user'],
     });
 
-    return messages.map((m) => this.enrichMessageWithVoiceUrl(m));
+    return messages.map((m) => {
+      m.user = toPublicUser(m.user) as Message['user'];
+      return this.enrichMessageWithVoiceUrl(m);
+    });
   }
 
   async sendMessage(
@@ -185,6 +188,9 @@ export class MessagesService {
       where: { id: saved.id },
       relations: ['user'],
     })) || saved;
+
+    // Пароль/refreshToken не должны уходить в REST-ответ и WS-рассылку
+    fullMessage.user = toPublicUser(fullMessage.user) as Message['user'];
 
     // 4. Отправляем единое событие создания сообщения для realtime-рассылки в WebSocket
     this.eventEmitter.emit('message.created', fullMessage);
@@ -442,6 +448,9 @@ export class MessagesService {
       where: { id: saved.id },
       relations: ['user'],
     })) || saved;
+
+    // Пароль/refreshToken не должны уходить в REST-ответ и WS-рассылку
+    fullMessage.user = toPublicUser(fullMessage.user) as Message['user'];
 
     // Рассылаем realtime new_message всем участникам
     this.eventEmitter.emit('message.created', fullMessage);
