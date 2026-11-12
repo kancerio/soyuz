@@ -116,7 +116,23 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.emit('auth_error', { message: 'Invalid or expired token' });
         return;
       }
-    } else if (data?.userId && (!this.jwtService || process.env.NODE_ENV !== 'production')) {
+    } else if (
+      data?.userId &&
+      (!this.jwtService ||
+        process.env.WS_ALLOW_INSECURE_AUTH === 'true' ||
+        process.env.NODE_ENV === 'test')
+    ) {
+      // Fallback без токена — только по явному флагу (dev/демо) или в тестах.
+      // ВНИМАНИЕ: nest build + node dist/main НЕ выставляет NODE_ENV=production,
+      // поэтому проверка по NODE_ENV здесь недопустима — только явный флаг.
+      if (process.env.WS_ALLOW_INSECURE_AUTH === 'true') {
+        logger.warn('Insecure WS auth by userId enabled (WS_ALLOW_INSECURE_AUTH)', {
+          event: 'auth_insecure_fallback',
+          socket_id: client.id,
+          user_id: Number(data.userId),
+          timestamp: new Date().toISOString(),
+        });
+      }
       userId = Number(data.userId);
     } else {
       logger.warn('Auth failed - missing token', {
@@ -198,16 +214,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const isParticipant = await this.chatsService.isParticipant(chatId, userId);
     if (!isParticipant) {
-      if (process.env.NODE_ENV !== 'production') {
-        const roomName = `chat_${chatId}`;
-        client.join(roomName);
-        client.emit('chat_joined', { chatId, isDemo: true });
-        logger.info('User joined demo chat room', {
+      if (process.env.WS_ALLOW_INSECURE_AUTH === 'true') {
+        // Демо-режим: вход в комнату любого чата — только по явному флагу.
+        // По умолчанию (prod/dev без флага) доступ только для участников чата.
+        logger.warn('Insecure demo chat join enabled (WS_ALLOW_INSECURE_AUTH)', {
           event: 'join_chat_demo',
           user_id: userId,
           chat_id: chatId,
-          room: roomName,
+          timestamp: new Date().toISOString(),
         });
+        const roomName = `chat_${chatId}`;
+        client.join(roomName);
+        client.emit('chat_joined', { chatId, isDemo: true });
         return;
       }
       logger.warn('Join chat failed - not a participant', {
