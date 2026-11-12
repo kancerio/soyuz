@@ -83,6 +83,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [membersModalKey, setMembersModalKey] = useState(0);
   const [rewrite, setRewrite] = useState<RewriteState>({ status: 'idle' });
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Панели
   const [showAITools, setShowAITools] = useState(false);
@@ -278,37 +279,40 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     let active = true;
     const fetchMessages = async () => {
       setLoading(true);
+      setLoadError(null);
       try {
         const data = await apiClient.getMessages(chatIdNum);
-        if (active) {
-          if (data && data.length > 0) {
-            const restored = data.map((m) =>
-              m.senderId === user?.id
-                ? {
-                    ...m,
-                    localStatus: (m.isRead
-                      ? 'read'
-                      : m.isDelivered
-                        ? 'delivered'
-                        : 'sent') as Message['localStatus'],
-                  }
-                : m
-            );
-            setMessages((prev) => mergeMessages(prev, restored));
+        if (!active) return;
+        const restored = (data ?? []).map((m) =>
+          m.senderId === user?.id
+            ? {
+                ...m,
+                localStatus: (m.isRead
+                  ? 'read'
+                  : m.isDelivered
+                    ? 'delivered'
+                    : 'sent') as Message['localStatus'],
+              }
+            : m
+        );
+        // отсекаем сообщения других чатов, оставшиеся после перехода между чатами
+        setMessages((prev) =>
+          mergeMessages(
+            prev.filter((m) => m.chatId === chatIdNum),
+            restored
+          )
+        );
 
-            const socket = getSocket();
-            if (socket) {
-              restored
-                .filter((m) => m.senderId !== user?.id && !m.isRead)
-                .forEach((m) => socket.emit('message_read', { messageId: m.id }));
-            }
-          } else {
-            setMessages(getMockMessages(chatIdNum));
-          }
+        const socket = getSocket();
+        if (socket) {
+          restored
+            .filter((m) => m.senderId !== user?.id && !m.isRead)
+            .forEach((m) => socket.emit('message_read', { messageId: m.id }));
         }
       } catch (error) {
         if (active) {
-          setMessages(getMockMessages(chatIdNum));
+          console.error('Failed to load messages:', error);
+          setLoadError('Не удалось загрузить сообщения');
         }
       } finally {
         if (active) setLoading(false);
@@ -319,228 +323,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       active = false;
     };
   }, [chatIdNum, user]);
-
-  function getMockMessages(id: number): Message[] {
-    const currentUserId = user?.id || 1;
-
-    switch (id) {
-      case 1: // Разработка
-        return [
-          {
-            id: 101,
-            senderId: 998,
-            chatId: 1,
-            content: 'Коллеги, новый билд мессенджера собран и протестирован. Все сервисы работают штатно.',
-            timestamp: new Date(Date.now() - 3600000),
-            type: 'text',
-            translatedText: 'Colleagues, a new build of the messenger is built and tested. All services are operational.',
-            translateStatus: 'completed',
-            targetLang: 'en',
-          },
-          {
-            id: 102,
-            senderId: 999,
-            chatId: 1,
-            content: 'Отлично! Я проверила WebSocket-шлюз и перевод сообщений — всё ок.',
-            timestamp: new Date(Date.now() - 1800000),
-            type: 'text',
-          },
-          {
-            id: 103,
-            senderId: currentUserId,
-            chatId: 1,
-            content: 'Супер, открываем доступ для всей команды! 🚀',
-            timestamp: new Date(Date.now() - 600000),
-            type: 'text',
-            localStatus: 'read',
-          },
-        ];
-      case 2: // Анна Петрова
-        return [
-          {
-            id: 201,
-            senderId: 999,
-            chatId: 2,
-            content: 'Привет! Ты успел посмотреть новую спецификацию по API?',
-            timestamp: new Date(Date.now() - 3600000),
-            type: 'text',
-            translatedText: 'Hi! Did you manage to review the new API specification?',
-            translateStatus: 'completed',
-            targetLang: 'en',
-          },
-          {
-            id: 202,
-            senderId: currentUserId,
-            chatId: 2,
-            content: 'Привет! Да, выглядит отлично, особенно модуль авторизации и токены.',
-            timestamp: new Date(Date.now() - 1800000),
-            type: 'text',
-            localStatus: 'read',
-          },
-          {
-            id: 203,
-            senderId: 999,
-            chatId: 2,
-            content: 'Договорились, тогда созваниваемся в 15:00! 👍',
-            timestamp: new Date(Date.now() - 600000),
-            type: 'text',
-          },
-        ];
-      case 4: // Дизайн команда
-        return [
-          {
-            id: 401,
-            senderId: 997,
-            chatId: 4,
-            content: 'Обновили компоненты дизайна: карточки, бабблы сообщений и адаптивную боковую панель.',
-            timestamp: new Date(Date.now() - 3600000),
-            type: 'text',
-          },
-          {
-            id: 402,
-            senderId: 999,
-            chatId: 4,
-            content: 'Цвета смотрятся очень стильно, особенно в тёмной теме (#111640)!',
-            timestamp: new Date(Date.now() - 1800000),
-            type: 'text',
-          },
-        ];
-      case 5: // Маркетинг
-        return [
-          {
-            id: 501,
-            senderId: 996,
-            chatId: 5,
-            content: 'Пресс-релиз мессенджера Союз 2.0 готов к публикации.',
-            timestamp: new Date(Date.now() - 3600000),
-            type: 'text',
-          },
-          {
-            id: 502,
-            senderId: currentUserId,
-            chatId: 5,
-            content: 'Отлично, запускаем кампанию сразу после релиза на прод.',
-            timestamp: new Date(Date.now() - 1800000),
-            type: 'text',
-            localStatus: 'read',
-          },
-        ];
-      case 6: // Техподдержка
-        return [
-          {
-            id: 601,
-            senderId: 995,
-            chatId: 6,
-            content: 'Здравствуйте! Вас приветствует служба поддержки Союз. Если возникнут вопросы — напишите нам.',
-            timestamp: new Date(Date.now() - 3600000),
-            type: 'text',
-          },
-        ];
-      case 7: // Путешествия
-        return [
-          {
-            id: 701,
-            senderId: 999,
-            chatId: 7,
-            content: 'Кто куда планирует поехать на майские праздники?',
-            timestamp: new Date(Date.now() - 3600000),
-            type: 'text',
-          },
-          {
-            id: 702,
-            senderId: 997,
-            chatId: 7,
-            content: 'Я еду на Алтай! Там невероятная природа весной 🏔️',
-            timestamp: new Date(Date.now() - 1800000),
-            type: 'text',
-          },
-        ];
-      case 8: // Новости Союза
-        return [
-          {
-            id: 801,
-            senderId: 996,
-            chatId: 8,
-            content: '📢 Официальный канал Союза: Встречайте обновлённый мессенджер нового поколения с поддержкой ИИ!',
-            timestamp: new Date(Date.now() - 3600000),
-            type: 'text',
-            translatedText: '📢 Official Soyuz Channel: Meet the next-gen messenger with AI capabilities!',
-            translateStatus: 'completed',
-            targetLang: 'en',
-          },
-          {
-            id: 802,
-            senderId: 996,
-            chatId: 8,
-            content: '🚀 В релизе: онлайн-переводчик, расшифровка голосовых заметок и новый адаптивный интерфейс.',
-            timestamp: new Date(Date.now() - 1800000),
-            type: 'text',
-          },
-        ];
-      default: // Общий чат (3)
-        return [
-          {
-            id: 101,
-            senderId: 999,
-            chatId: 3,
-            content: 'Коллеги, выложил новую версию сборки на тестовый сервер. Проверьте, пожалуйста. Если всё ок — можно мерджить в main.',
-            timestamp: new Date(Date.now() - 3600000),
-            type: 'text',
-            translatedText: 'Colleagues, I uploaded a new build version to the test server. Please check. If all is ok — we can merge to main.',
-            translateStatus: 'completed',
-            targetLang: 'en',
-          },
-          {
-            id: 102,
-            senderId: currentUserId,
-            chatId: 3,
-            content: 'Всё работает, ошибок не нашёл. Можно мерджить! 🚀',
-            timestamp: new Date(Date.now() - 2400000),
-            type: 'text',
-            localStatus: 'read',
-          },
-          {
-            id: 103,
-            senderId: 998,
-            chatId: 3,
-            content: 'Отлично! Я уже подготовил релиз-ноты. Сегодня вечером выложим на прод.',
-            timestamp: new Date(Date.now() - 1800000),
-            type: 'text',
-          },
-          {
-            id: 104,
-            senderId: 998,
-            chatId: 3,
-            content: '[Документ] release-notes.md (2.4 МБ)',
-            timestamp: new Date(Date.now() - 1200000),
-            type: 'text',
-          },
-          {
-            id: 105,
-            senderId: 999,
-            chatId: 3,
-            content: '',
-            timestamp: new Date(Date.now() - 600000),
-            type: 'voice',
-            audioUrl: 'https://actions.google.com/sounds/v1/water/rain_heavy.ogg',
-            transcript: 'Привет команде! Завтра в 10:00 проводим синхронизацию по итогам релиза.',
-            transcriptStatus: 'completed',
-            summary: 'Синхронизация по итогам релиза назначена на завтра в 10:00.',
-            summaryStatus: 'completed',
-            voiceMetadata: { durationMs: 14000, mimeType: 'audio/ogg', sizeBytes: 52000 },
-          },
-          {
-            id: 106,
-            senderId: currentUserId,
-            chatId: 3,
-            content: 'Супер, спасибо! 👍',
-            timestamp: new Date(Date.now() - 60000),
-            type: 'text',
-            localStatus: 'read',
-          },
-        ];
-    }
-  }
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1162,7 +944,13 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
             </span>
           </div>
 
-          {messages.length === 0 && (
+          {loadError && messages.length === 0 && (
+            <div className="text-center py-12 text-sm text-red-500" role="alert">
+              {loadError}
+            </div>
+          )}
+
+          {messages.length === 0 && !loadError && (
             <div className="text-center py-12 text-sm text-[#6070a0] dark:text-[#7b8db5]">
               В этом чате пока нет сообщений. Напишите первое!
             </div>
