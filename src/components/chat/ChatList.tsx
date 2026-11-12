@@ -7,6 +7,7 @@ import { apiClient } from '@/lib/apiClient';
 import { Chat } from '@/types/chat';
 import Avatar from '@/components/ui/Avatar';
 import LoadingState from '@/components/ui/LoadingState';
+import ErrorState from '@/components/ui/ErrorState';
 
 interface ChatListProps {
   onSelectChat?: (id: number) => void;
@@ -16,6 +17,7 @@ interface ChatListProps {
 export default function ChatList({ onSelectChat, className = '' }: ChatListProps) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'direct' | 'group' | 'channel'>('all');
 
@@ -30,36 +32,23 @@ export default function ChatList({ onSelectChat, className = '' }: ChatListProps
   }, []);
   const pathname = usePathname();
 
+  const fetchChats = async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await apiClient.getChats();
+      setChats(data ?? []);
+    } catch (error) {
+      console.error('Failed to fetch chats:', error);
+      setLoadError('Не удалось загрузить чаты');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchChats = async () => {
-      try {
-        const data = await apiClient.getChats();
-        if (data && data.length > 0) {
-          setChats(data);
-        } else {
-          setChats(getMockChats());
-        }
-      } catch (error) {
-        setChats(getMockChats());
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchChats();
   }, []);
-
-  function getMockChats(): Chat[] {
-    return [
-      { id: 1, title: 'Разработка', isGroup: true, createdAt: new Date() },
-      { id: 2, title: 'Анна Петрова', isGroup: false, createdAt: new Date() },
-      { id: 3, title: 'Общий чат', isGroup: true, createdAt: new Date() },
-      { id: 4, title: 'Дизайн команда', isGroup: true, createdAt: new Date() },
-      { id: 5, title: 'Маркетинг', isGroup: true, createdAt: new Date() },
-      { id: 6, title: 'Техподдержка', isGroup: false, createdAt: new Date() },
-      { id: 7, title: 'Путешествия', isGroup: false, createdAt: new Date() },
-      { id: 8, title: 'Новости Союза', isGroup: true, createdAt: new Date() },
-    ];
-  }
 
   const isChannel = (chat: Chat) =>
     chat.id === 8 ||
@@ -225,6 +214,10 @@ export default function ChatList({ onSelectChat, className = '' }: ChatListProps
         {loading ? (
           <div className="py-12 flex justify-center">
             <LoadingState text="Загрузка чатов…" />
+          </div>
+        ) : loadError ? (
+          <div className="py-12 px-4">
+            <ErrorState message={loadError} onRetry={fetchChats} />
           </div>
         ) : filteredChats.length === 0 ? (
           <div className="py-12 text-center text-xs text-[#6070a0] dark:text-[#7b8db5] px-4">
