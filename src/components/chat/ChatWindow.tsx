@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiClient, mapBackendMessage, mapSttStatus, mapSummaryStatus } from '@/lib/apiClient';
-import { initSocket, getSocket } from '@/lib/socket';
+import { initSocket, getSocket, whenSocketAuthed } from '@/lib/socket';
 import { useUser } from '@/context/UserContext';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSocketStatus } from '@/context/SocketContext';
@@ -132,7 +132,14 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
   useEffect(() => {
     if (!user) return;
     const socket = initSocket(user.id);
-    socket.emit('join_chat', { chatId: chatIdNum });
+    let joined = false;
+    // join_chat после auth_success: буферизованный emit может уйти
+    // на сервер раньше auth и получить отказ «Not authenticated»
+    whenSocketAuthed().then((ok) => {
+      if (!ok) return;
+      joined = true;
+      socket.emit('join_chat', { chatId: chatIdNum });
+    });
 
     const handleNewMessage = (msg: any) => {
       if (Number(msg.chatId) !== chatIdNum) return;
@@ -283,7 +290,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     socket.on('message_deleted', handleMessageDeleted);
 
     return () => {
-      socket.emit('leave_chat', { chatId: chatIdNum });
+      if (joined) socket.emit('leave_chat', { chatId: chatIdNum });
       socket.off('new_message', handleNewMessage);
       socket.off('message_translated', handleMessageTranslated);
       socket.off('message_transcribed', handleMessageTranscribed);

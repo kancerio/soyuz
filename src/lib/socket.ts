@@ -4,6 +4,8 @@ let socket: Socket | null = null;
 let currentUserId: number | null = null;
 let authErrorHandler: (() => void) | null = null;
 let lastAuthErrorAt = 0;
+let authed = false;
+let authWaiters: Array<() => void> = [];
 
 export function initSocket(userId: number, token?: string): Socket {
   if (!socket) {
@@ -23,7 +25,15 @@ export function initSocket(userId: number, token?: string): Socket {
 
     socket.on('connect', () => {
       console.log('[Socket] connected, authenticating...');
+      authed = false;
       emitAuth();
+    });
+
+    socket.on('auth_success', () => {
+      authed = true;
+      const waiters = authWaiters;
+      authWaiters = [];
+      waiters.forEach((fn) => fn());
     });
 
     socket.on('auth_error', (err) => {
@@ -37,7 +47,10 @@ export function initSocket(userId: number, token?: string): Socket {
       }
     });
     socket.on('connect_error', (err) => console.error('[Socket] error:', err));
-    socket.on('disconnect', () => console.log('[Socket] disconnected'));
+    socket.on('disconnect', () => {
+      authed = false;
+      console.log('[Socket] disconnected');
+    });
   }
   return socket;
 }
@@ -52,6 +65,28 @@ function emitAuth() {
 /** Повторная авторизация с актуальным токеном — вызывать после refresh. */
 export function reauthSocket() {
   if (socket && socket.connected) emitAuth();
+}
+
+/**
+ * Резолвится, когда сокет авторизован (auth_success).
+ * Нужен, чтобы события вроде join_chat не уходили на сервер раньше auth
+ * и не получали отказ «Not authenticated».
+ */
+export function whenSocketAuthed(timeoutMs = 5000): Promise<boolean> {
+  if (!socket || !socket.connected) return Promise.resolve(false);
+  if (authed) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      authWaiters = authWaiters.filter((f) => f !== done);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      authWaiters = authWaiters.filter((f) => f !== done);
+      resolve(false);
+    }, timeoutMs);
+    authWaiters.push(done);
+  });
 }
 
 /** Обработчик ошибок авторизации: обычно запуск refresh токенов. */
