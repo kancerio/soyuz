@@ -37,12 +37,22 @@ describe('ChatsController', () => {
   });
 
   it('returns usernames and roles in the group members response', async () => {
+    chatsServiceMock.isParticipant.mockResolvedValue(true);
     chatsServiceMock.getChatMembers.mockResolvedValue([
       { userId: 12, role: 'admin', user: { username: 'alice' } },
     ]);
 
-    await expect(controller.getChatMembers('7')).resolves.toEqual([
-      { userId: 12, username: 'alice', role: 'admin' },
-    ]);
+    await expect(
+      controller.getChatMembers('7', { user: { userId: 1 } }),
+    ).resolves.toEqual([{ userId: 12, username: 'alice', role: 'admin' }]);
+  });
+
+  it('denies the members list to non-participants', async () => {
+    chatsServiceMock.isParticipant.mockResolvedValue(false);
+
+    await expect(
+      controller.getChatMembers('7', { user: { userId: 1 } }),
+    ).rejects.toThrow();
+    expect(chatsServiceMock.getChatMembers).not.toHaveBeenCalled();
   });
 });

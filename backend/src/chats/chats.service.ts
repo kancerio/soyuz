@@ -146,11 +146,16 @@ export class ChatsService implements OnApplicationBootstrap {
     return savedChat;
   }
 
-  // Добавить участника
-  async addParticipant(chatId: number, userId: number): Promise<ChatParticipant> {
+  // Добавить участника (только owner/admin)
+  async addParticipant(chatId: number, userId: number, actorId: number): Promise<ChatParticipant> {
     const chat = await this.findOne(chatId);
     if (!chat) {
       throw new NotFoundException('Чат не найден');
+    }
+
+    const actorRole = await this.getUserRole(chatId, actorId);
+    if (actorRole !== 'owner' && actorRole !== 'admin') {
+      throw new ForbiddenException('Недостаточно прав для добавления участников');
     }
 
     const user = await this.usersService.findOne(userId);
@@ -212,8 +217,17 @@ export class ChatsService implements OnApplicationBootstrap {
     await this.chatParticipantsRepository.delete({ chatId, userId });
   }
 
-  // Изменить роль участника
-  async changeRole(chatId: number, userId: number, newRole: string): Promise<ChatParticipant> {
+  // Изменить роль участника (только владелец чата)
+  async changeRole(chatId: number, userId: number, newRole: string, actorId: number): Promise<ChatParticipant> {
+    const actorRole = await this.getUserRole(chatId, actorId);
+    if (actorRole !== 'owner') {
+      throw new ForbiddenException('Изменять роли может только владелец чата');
+    }
+
+    if (!['owner', 'admin', 'member'].includes(newRole)) {
+      throw new ForbiddenException('Недопустимая роль');
+    }
+
     const participant = await this.chatParticipantsRepository.findOne({
       where: { chatId, userId },
     });
@@ -226,16 +240,25 @@ export class ChatsService implements OnApplicationBootstrap {
     return this.chatParticipantsRepository.save(participant);
   }
 
-  // Удалить чат
-  async deleteChat(chatId: number): Promise<void> {
+  // Удалить чат (только владелец)
+  async deleteChat(chatId: number, actorId: number): Promise<void> {
+    const actorRole = await this.getUserRole(chatId, actorId);
+    if (actorRole !== 'owner') {
+      throw new ForbiddenException('Удалить чат может только владелец');
+    }
     await this.chatsRepository.delete(chatId);
   }
 
-  // Обновить название чата
-  async updateChatTitle(chatId: number, title: string): Promise<Chat> {
+  // Обновить название чата (owner/admin)
+  async updateChatTitle(chatId: number, title: string, actorId: number): Promise<Chat> {
     const chat = await this.findOne(chatId);
     if (!chat) {
       throw new NotFoundException('Чат не найден');
+    }
+
+    const actorRole = await this.getUserRole(chatId, actorId);
+    if (actorRole !== 'owner' && actorRole !== 'admin') {
+      throw new ForbiddenException('Недостаточно прав для изменения названия');
     }
 
     chat.title = title;

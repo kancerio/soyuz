@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, Request, NotFoundException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ChatsService } from './chats.service';
 
@@ -15,14 +15,26 @@ export class ChatsController {
     return this.chatsService.getUserChats(req.user.userId);
   }
 
-  // GET /chats/:id - получить чат по ID
+  // GET /chats/:id - получить чат по ID (только участникам)
   @Get(':id')
   async getChat(@Param('id') id: string, @Request() req) {
     const chat = await this.chatsService.findOne(+id);
-    if (!chat) {
-      return { message: 'Чат не найден' };
+    const isParticipant = await this.chatsService.isParticipant(+id, req.user.userId);
+    if (!chat || !isParticipant) {
+      // Не раскрываем существование чата посторонним
+      throw new NotFoundException('Чат не найден');
     }
-    return chat;
+    return {
+      id: chat.id,
+      title: chat.title,
+      isGroup: chat.isGroup,
+      createdAt: chat.createdAt,
+      participants: (chat.participants ?? []).map((p) => ({
+        userId: p.userId,
+        role: p.role,
+        username: p.user?.username ?? '',
+      })),
+    };
   }
 
   // POST /chats/private/:userId - создать личный чат
@@ -41,27 +53,32 @@ export class ChatsController {
     return this.chatsService.createGroupChat(title, req.user.userId, participantIds);
   }
 
-  // PATCH /chats/:id - обновить название чата
+  // PATCH /chats/:id - обновить название чата (owner/admin)
   @Patch(':id')
   async updateChatTitle(
     @Param('id') id: string,
     @Body('title') title: string,
+    @Request() req,
   ) {
-    return this.chatsService.updateChatTitle(+id, title);
+    return this.chatsService.updateChatTitle(+id, title, req.user.userId);
   }
 
   // DELETE /chats/:id - удалить чат (только владелец)
   @Delete(':id')
-  async deleteChat(@Param('id') id: string) {
-    await this.chatsService.deleteChat(+id);
+  async deleteChat(@Param('id') id: string, @Request() req) {
+    await this.chatsService.deleteChat(+id, req.user.userId);
     return { message: 'Чат удалён' };
   }
 
   // ========== УПРАВЛЕНИЕ УЧАСТНИКАМИ ==========
 
-  // GET /chats/:chatId/members - получить список участников с ролями
+  // GET /chats/:chatId/members - получить список участников с ролями (только участникам)
   @Get(':chatId/members')
-  async getChatMembers(@Param('chatId') chatId: string) {
+  async getChatMembers(@Param('chatId') chatId: string, @Request() req) {
+    const isParticipant = await this.chatsService.isParticipant(+chatId, req.user.userId);
+    if (!isParticipant) {
+      throw new NotFoundException('Чат не найден');
+    }
     const members = await this.chatsService.getChatMembers(+chatId);
     return members.map(m => ({
       userId: m.userId,
@@ -80,13 +97,14 @@ export class ChatsController {
     return { userId: +userId, role };
   }
 
-  // POST /chats/:chatId/members/:userId - добавить участника
+  // POST /chats/:chatId/members/:userId - добавить участника (owner/admin)
   @Post(':chatId/members/:userId')
   async addParticipant(
     @Param('chatId') chatId: string,
     @Param('userId') userId: string,
+    @Request() req,
   ) {
-    return this.chatsService.addParticipant(+chatId, +userId);
+    return this.chatsService.addParticipant(+chatId, +userId, req.user.userId);
   }
 
   @Delete(':chatId/members/me')
@@ -95,14 +113,15 @@ async leaveChat(@Param('chatId') chatId: string, @Request() req) {
   return { message: 'Вы вышли из чата' };
 }
 
-  // PATCH /chats/:chatId/members/:userId/role - изменить роль участника
+  // PATCH /chats/:chatId/members/:userId/role - изменить роль участника (только владелец)
   @Patch(':chatId/members/:userId/role')
   async changeRole(
     @Param('chatId') chatId: string,
     @Param('userId') userId: string,
     @Body('role') role: string,
+    @Request() req,
   ) {
-    const result = await this.chatsService.changeRole(+chatId, +userId, role);
+    const result = await this.chatsService.changeRole(+chatId, +userId, role, req.user.userId);
     return {
       userId: result.userId,
       chatId: result.chatId,
