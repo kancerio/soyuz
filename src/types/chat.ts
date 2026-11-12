@@ -53,7 +53,7 @@ export interface Message {
   translateStatus?: TranslateStatus;
 
   // --- Локальный статус отправки (только на фронте) ---
-  localStatus?: 'sending' | 'sent' | 'delivered' | 'read';
+  localStatus?: 'sending' | 'sent' | 'delivered' | 'read' | 'error';
 
   // --- Voice ---
   type?: MessageType;

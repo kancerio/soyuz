@@ -146,7 +146,26 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
             ? 'delivered'
             : 'sent';
       }
-      setMessages((prev) => mergeMessages(prev, [incoming]));
+      setMessages((prev) => {
+        // Эхо своего сообщения: подхватываем ещё не подтверждённый локальный
+        // черновик, чтобы не плодить дубликат с временным id. Матчинг только
+        // по «sending»-черновикам, поэтому повторяющиеся тексты не страдают.
+        const tempIdx = prev.findIndex(
+          (m) =>
+            m.localStatus === 'sending' &&
+            m.senderId === incoming.senderId &&
+            m.chatId === incoming.chatId &&
+            m.content === incoming.content
+        );
+        if (tempIdx >= 0) {
+          const next = [...prev];
+          next[tempIdx] = incoming;
+          return next.sort(
+            (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
+          );
+        }
+        return mergeMessages(prev, [incoming]);
+      });
 
       // чужое сообщение в открытом чате сразу отмечаем прочитанным на сервере —
       // Gateway пометит isRead и уведомит отправителя через message_status_update
@@ -334,7 +353,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     const content = newMessage;
     setNewMessage('');
 
-    const tempId = Date.now();
+    const tempId = -Date.now();
     const tempMessage: Message = {
       id: tempId,
       content,
@@ -351,55 +370,11 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     };
     setMessages((prev) => mergeMessages(prev, [tempMessage]));
 
-    let fallbackTimer: NodeJS.Timeout;
-    const socket = getSocket();
-    const cleanupFallback = () => fallbackTimer && clearTimeout(fallbackTimer);
-
-    const onNewMessageConfirm = (msg: any) => {
-      if (msg.userId === user?.id && msg.content === content && msg.chatId === chatIdNum) {
-        cleanupFallback();
-        socket?.off('new_message', onNewMessageConfirm);
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === tempId
-              ? {
-                  ...m,
-                  id: msg.id,
-                  localStatus: 'sent',
-                  timestamp: msg.createdAt ? new Date(msg.createdAt) : new Date(),
-                }
-              : m
-          )
-        );
-        setTimeout(() => {
-          setMessages((prev) =>
-            prev.map((m) => (m.id === msg.id ? { ...m, localStatus: 'delivered' } : m))
-          );
-        }, 800);
-        setTimeout(() => {
-          setMessages((prev) =>
-            prev.map((m) => (m.id === msg.id ? { ...m, localStatus: 'read' } : m))
-          );
-        }, 2000);
-      }
-    };
-    socket?.on('new_message', onNewMessageConfirm);
-
-    fallbackTimer = setTimeout(async () => {
-      socket?.off('new_message', onNewMessageConfirm);
-      try {
-        const fresh = await apiClient.getMessages(chatIdNum);
-        setMessages((prev) => mergeMessages(prev, fresh));
-      } catch (err) {
-        console.error('Fallback failed:', err);
-      }
-    }, 5000);
-
+    // Источник истины — ответ REST. WS-эхо подхватит черновик в handleNewMessage,
+    // дальнейшие delivered/read приходят через message_status_update.
     try {
       const saved = await apiClient.sendMessage(chatIdNum, content, 'auto', targetLanguage);
       if (saved && saved.id) {
-        cleanupFallback();
-        socket?.off('new_message', onNewMessageConfirm);
         setMessages((prev) =>
           prev.map((m) =>
             m.id === tempId
@@ -409,34 +384,17 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                   localStatus: 'sent',
                   translatedText: saved.translatedText || m.translatedText,
                   translateStatus: saved.translateStatus || m.translateStatus,
-                  timestamp: (saved as any)?.createdAt ? new Date((saved as any).createdAt) : m.timestamp,
+                  timestamp: saved.timestamp ?? m.timestamp,
                 }
               : m
           )
         );
-        setTimeout(() => {
-          setMessages((prev) =>
-            prev.map((m) => (m.id === saved.id ? { ...m, localStatus: 'delivered' } : m))
-          );
-        }, 500);
-        setTimeout(() => {
-          setMessages((prev) =>
-            prev.map((m) => (m.id === saved.id ? { ...m, localStatus: 'read' } : m))
-          );
-        }, 1200);
       }
     } catch (error) {
-      console.warn('Failed to send via API, preserving local message:', error);
-      cleanupFallback();
-      socket?.off('new_message', onNewMessageConfirm);
+      console.error('Failed to send message:', error);
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === tempId
-            ? {
-                ...m,
-                localStatus: 'sent',
-              }
-            : m
+          m.id === tempId ? { ...m, localStatus: 'error' as const } : m
         )
       );
     }
@@ -680,6 +638,12 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
         return <span className="text-xs font-semibold">✓✓</span>;
       case 'read':
         return <span className="text-xs font-semibold text-sky-200">✓✓</span>;
+      case 'error':
+        return (
+          <span className="text-xs font-semibold" title="Не удалось отправить">
+            ⚠
+          </span>
+        );
       default:
         return null;
     }
