@@ -36,17 +36,13 @@ export default function CreateChatModal({ isOpen, onClose, onChatCreated }: Crea
 
   const fetchUsers = async () => {
     setLoading(true);
+    setError('');
     try {
       const allUsers = await apiClient.getUsers();
       const filtered = allUsers.filter(u => u.id !== currentUser?.id);
       setUsers(filtered);
     } catch (err: any) {
-      setUsers([
-        { id: 2, name: 'Анна Петрова', username: 'anna_p', email: 'anna@soyuz.chat', country: 'Россия', language: 'ru', status: 'В сети', privacySettings: { showLastSeen: true, showReadReceipts: true } },
-        { id: 3, name: 'Максим Смирнов', username: 'max_smirnov', email: 'max@soyuz.chat', country: 'Россия', language: 'ru', status: 'Был недавно', privacySettings: { showLastSeen: true, showReadReceipts: true } },
-        { id: 4, name: 'Елена Васильева', username: 'elena_v', email: 'elena@soyuz.chat', country: 'Россия', language: 'ru', status: 'В сети', privacySettings: { showLastSeen: true, showReadReceipts: true } },
-        { id: 5, name: 'Дмитрий Козлов', username: 'dmitry_k', email: 'dmitry@soyuz.chat', country: 'Россия', language: 'ru', status: 'В сети', privacySettings: { showLastSeen: true, showReadReceipts: true } },
-      ]);
+      setError(err.message || 'Не удалось загрузить пользователей');
     } finally {
       setLoading(false);
     }
