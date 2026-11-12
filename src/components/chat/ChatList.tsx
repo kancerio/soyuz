@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
 import { Chat } from '@/types/chat';
+import { useUser } from '@/context/UserContext';
+import { initSocket } from '@/lib/socket';
 import Avatar from '@/components/ui/Avatar';
 import LoadingState from '@/components/ui/LoadingState';
 import ErrorState from '@/components/ui/ErrorState';
@@ -14,12 +16,26 @@ interface ChatListProps {
   className?: string;
 }
 
+// Активность чата из realtime-событий: превью последнего сообщения,
+// время и число непрочитанных
+interface ChatActivity {
+  text: string;
+  time: number;
+  unread: number;
+  own: boolean;
+}
+
+const formatTime = (ts: number) =>
+  new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
 export default function ChatList({ onSelectChat, className = '' }: ChatListProps) {
+  const { user } = useUser();
   const [chats, setChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'direct' | 'group' | 'channel'>('all');
+  const [activity, setActivity] = useState<Map<number, ChatActivity>>(new Map());
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -31,6 +47,64 @@ export default function ChatList({ onSelectChat, className = '' }: ChatListProps
     }
   }, []);
   const pathname = usePathname();
+
+  // Realtime: новые сообщения обновляют превью, время и непрочитанные,
+  // чат с активностью поднимается наверх списка
+  useEffect(() => {
+    if (!user) return;
+    const socket = initSocket(user.id);
+
+    const handleNewMessage = (msg: any) => {
+      const chatId = Number(msg.chatId);
+      if (!chatId) return;
+      const own = Number(msg.userId ?? msg.senderId) === user.id;
+      const isOpen = pathname === `/chat/${chatId}`;
+      const text = msg.voiceFileId
+        ? 'Голосовое сообщение'
+        : typeof msg.content === 'string' && msg.content.trim()
+          ? msg.content
+          : 'Новое сообщение';
+      const time = msg.createdAt ? new Date(msg.createdAt).getTime() : Date.now();
+
+      setActivity((prev) => {
+        const next = new Map(prev);
+        const cur = next.get(chatId);
+        next.set(chatId, {
+          text,
+          time,
+          own,
+          unread: own || isOpen ? 0 : (cur?.unread ?? 0) + 1,
+        });
+        return next;
+      });
+
+      setChats((prev) => {
+        const idx = prev.findIndex((c) => c.id === chatId);
+        if (idx <= 0) return prev;
+        const chat = prev[idx];
+        return [chat, ...prev.slice(0, idx), ...prev.slice(idx + 1)];
+      });
+    };
+
+    socket.on('new_message', handleNewMessage);
+    return () => {
+      socket.off('new_message', handleNewMessage);
+    };
+  }, [user, pathname]);
+
+  // Открыли чат — сбрасываем его счётчик непрочитанных
+  useEffect(() => {
+    const m = /^\/chat\/(\d+)$/.exec(pathname);
+    if (!m) return;
+    const chatId = Number(m[1]);
+    setActivity((prev) => {
+      const cur = prev.get(chatId);
+      if (!cur || cur.unread === 0) return prev;
+      const next = new Map(prev);
+      next.set(chatId, { ...cur, unread: 0 });
+      return next;
+    });
+  }, [pathname]);
 
   const fetchChats = async () => {
     setLoading(true);
@@ -237,6 +311,7 @@ export default function ChatList({ onSelectChat, className = '' }: ChatListProps
             const isChan = isChannel(chat);
             const title = chat.title || (isChan ? `Канал #${chat.id}` : chat.isGroup ? `Группа #${chat.id}` : `Личный чат #${chat.id}`);
             const subtitle = isChan ? 'Официальный канал' : chat.isGroup ? 'Групповой диалог' : 'Личная переписка';
+            const act = activity.get(chat.id);
 
             return (
               <Link
@@ -267,7 +342,7 @@ export default function ChatList({ onSelectChat, className = '' }: ChatListProps
                         isSelected ? 'text-blue-100' : 'text-gray-400'
                       }`}
                     >
-                      14:32
+                      {act ? formatTime(act.time) : ''}
                     </span>
                   </div>
 
@@ -277,11 +352,10 @@ export default function ChatList({ onSelectChat, className = '' }: ChatListProps
                         isSelected ? 'text-blue-100' : 'text-[#6070a0] dark:text-[#7b8db5]'
                       }`}
                     >
-                      {subtitle}
+                      {act?.text || subtitle}
                     </p>
 
-                    {/* Пример индикатора / бейджа */}
-                    {chat.id % 2 === 0 ? (
+                    {act && act.unread > 0 ? (
                       <span
                         className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full min-w-[18px] text-center shrink-0 ${
                           isSelected
@@ -289,13 +363,13 @@ export default function ChatList({ onSelectChat, className = '' }: ChatListProps
                             : 'bg-blue-600 text-white dark:bg-blue-500'
                         }`}
                       >
-                        {chat.id}
+                        {act.unread > 99 ? '99+' : act.unread}
                       </span>
-                    ) : (
+                    ) : act?.own ? (
                       <span className={`text-xs ${isSelected ? 'text-white' : 'text-blue-500'}`}>
-                        ✓✓
+                        ✓
                       </span>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </Link>
