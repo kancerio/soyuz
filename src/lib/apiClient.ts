@@ -1,5 +1,6 @@
 import { Chat, Message, TranslateStatus, TranscriptStatus, SummaryStatus } from '@/types/chat';
 import { User } from '@/types/user';
+import { reauthSocket, setSocketAuthErrorHandler } from './socket';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -33,6 +34,8 @@ export function setTokens(access: string, refresh: string) {
   refreshToken = refresh;
   sessionStorage.setItem('accessToken', access);
   sessionStorage.setItem('refreshToken', refresh);
+  // Если сокет уже подключён — переподписываем его свежим токеном
+  reauthSocket();
 }
 
 export function clearTokens() {
@@ -41,6 +44,45 @@ export function clearTokens() {
   sessionStorage.removeItem('accessToken');
   sessionStorage.removeItem('refreshToken');
 }
+
+let refreshPromise: Promise<boolean> | null = null;
+
+// Единый refresh токенов: его вызывает HTTP-слой при 401 и сокет при auth_error.
+// Параллельные вызовы шарят один запрос.
+async function doRefresh(): Promise<boolean> {
+  if (!refreshToken) return false;
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      try {
+        const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+        if (!refreshRes.ok) {
+          clearTokens();
+          if (typeof window !== 'undefined') window.location.href = '/login';
+          return false;
+        }
+        const data = await refreshRes.json();
+        setTokens(data.accessToken, data.refreshToken);
+        return true;
+      } catch {
+        clearTokens();
+        return false;
+      } finally {
+        refreshPromise = null;
+      }
+    })();
+  }
+  return refreshPromise;
+}
+
+// Сокет отклонён по auth_error — обновляем токены;
+// setTokens через reauthSocket переподпишет сокет на комнаты.
+setSocketAuthErrorHandler(() => {
+  void doRefresh();
+});
 
 async function request<T>(
   endpoint: string,
@@ -59,25 +101,11 @@ async function request<T>(
 
   const response = await fetch(url, { ...options, headers });
   if (response.status === 401 && retry && refreshToken) {
-    try {
-      const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      });
-      if (refreshRes.ok) {
-        const data = await refreshRes.json();
-        setTokens(data.accessToken, data.refreshToken);
-        return request<T>(endpoint, options, false);
-      } else {
-        clearTokens();
-        window.location.href = '/login';
-        throw new Error('Session expired');
-      }
-    } catch (e) {
-      clearTokens();
-      throw e;
+    const refreshed = await doRefresh();
+    if (refreshed) {
+      return request<T>(endpoint, options, false);
     }
+    throw new Error('Session expired');
   }
   if (!response.ok) {
     let errorMsg = `Request failed: ${response.status}`;
