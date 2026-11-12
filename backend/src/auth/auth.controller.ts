@@ -4,6 +4,7 @@ import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { RateLimitGuard } from '../common/rate-limit.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -13,11 +14,13 @@ export class AuthController {
   ) {}
 
   @Post('register')
+  @UseGuards(RateLimitGuard)
   register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);
   }
 
   @Post('login')
+  @UseGuards(RateLimitGuard)
   login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
   }
@@ -29,6 +32,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @UseGuards(RateLimitGuard)
   async refresh(@Body('refreshToken') refreshToken: string) {
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token обязателен');
