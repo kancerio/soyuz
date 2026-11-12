@@ -16,9 +16,29 @@ import { Message } from '../messages/message.entity';
 import { logger } from '../common/logger';
 import { OnEvent } from '@nestjs/event-emitter';
 
+function wsCorsOrigin(
+  origin: string | undefined,
+  callback: (err: Error | null, allow?: boolean) => void,
+) {
+  // Функция вместо статического списка: env (в т.ч. из .env) читается
+  // на момент handshake, а не при импорте файла.
+  const allowed = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    ...(process.env.FRONTEND_URL
+      ? process.env.FRONTEND_URL.split(',').map((o) => o.trim())
+      : []),
+  ];
+  if (!origin || allowed.includes(origin)) {
+    callback(null, true);
+  } else {
+    callback(new Error(`Origin ${origin} не разрешён WS CORS-политикой`));
+  }
+}
+
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: wsCorsOrigin,
     credentials: true,
   },
 })
