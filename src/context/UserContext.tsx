@@ -29,26 +29,12 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
       try {
         setUser(JSON.parse(storedUser));
       } catch {
-        setUser(getMockDefaultUser());
+        // Битая сессия — сбрасываем, остаёмся неавторизованными
+        sessionStorage.removeItem('user');
       }
-    } else {
-      setUser(getMockDefaultUser());
     }
     setIsLoading(false);
   }, []);
-
-  function getMockDefaultUser(): User {
-    return {
-      id: 1,
-      email: 'ivan.petrov@soyuz.chat',
-      name: 'Иван Петров',
-      username: 'ivan_petrov',
-      country: 'Россия',
-      language: 'ru',
-      status: 'В сети',
-      privacySettings: { showLastSeen: true, showReadReceipts: true },
-    };
-  }
 
   const login = async (email: string, password: string) => {
     const res = await apiClient.login({ email, password });
