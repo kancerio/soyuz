@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "AI Service for Messenger",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "paths": {
     "/": {
@@ -15,6 +15,74 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/construction-terms": {
+      "post": {
+        "summary": "Construction Terms",
+        "operationId": "construction_terms_construction_terms_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConstructionTermsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConstructionTermsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "AI or reference provider error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Provider unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Provider timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
               }
             }
           }
@@ -68,6 +136,16 @@
           },
           "503": {
             "description": "AI provider unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "AI provider timeout",
             "content": {
               "application/json": {
                 "schema": {
@@ -133,6 +211,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "description": "AI provider timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -164,6 +252,19 @@
           },
           "502": {
             "description": "AI provider error"
+          },
+          "503": {
+            "description": "Speech provider unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Speech provider timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -205,6 +306,26 @@
           },
           "502": {
             "description": "AI provider error"
+          },
+          "503": {
+            "description": "AI provider unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "AI provider timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -421,6 +542,136 @@
           "audio"
         ],
         "title": "Body_speech_to_text_stt_post"
+      },
+      "ConstructionTermResult": {
+        "properties": {
+          "term": {
+            "type": "string",
+            "title": "Term"
+          },
+          "start": {
+            "type": "integer",
+            "title": "Start"
+          },
+          "end": {
+            "type": "integer",
+            "title": "End"
+          },
+          "definition": {
+            "type": "string",
+            "title": "Definition"
+          },
+          "country_code": {
+            "type": "string",
+            "title": "Country Code"
+          },
+          "source_title": {
+            "type": "string",
+            "title": "Source Title"
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          },
+          "source_language": {
+            "type": "string",
+            "title": "Source Language"
+          }
+        },
+        "type": "object",
+        "required": [
+          "term",
+          "start",
+          "end",
+          "definition",
+          "country_code",
+          "source_title",
+          "source_url",
+          "source_language"
+        ],
+        "title": "ConstructionTermResult"
+      },
+      "ConstructionTermsRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "source_language": {
+            "type": "string",
+            "title": "Source Language"
+          },
+          "response_language": {
+            "type": "string",
+            "title": "Response Language"
+          },
+          "country_code": {
+            "type": "string",
+            "title": "Country Code"
+          },
+          "max_terms": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Max Terms",
+            "default": 5
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text",
+          "source_language",
+          "response_language",
+          "country_code"
+        ],
+        "title": "ConstructionTermsRequest"
+      },
+      "ConstructionTermsResponse": {
+        "properties": {
+          "terms": {
+            "items": {
+              "$ref": "#/components/schemas/ConstructionTermResult"
+            },
+            "type": "array",
+            "title": "Terms"
+          },
+          "source_language": {
+            "type": "string",
+            "title": "Source Language"
+          },
+          "response_language": {
+            "type": "string",
+            "title": "Response Language"
+          },
+          "country_code": {
+            "type": "string",
+            "title": "Country Code"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "mock": {
+            "type": "boolean",
+            "title": "Mock"
+          },
+          "correlation_id": {
+            "type": "string",
+            "title": "Correlation Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "terms",
+          "source_language",
+          "response_language",
+          "country_code",
+          "provider",
+          "mock",
+          "correlation_id"
+        ],
+        "title": "ConstructionTermsResponse"
       },
       "ErrorContent": {
         "properties": {
@@ -793,5 +1044,4 @@
         "title": "ValidationError"
       }
     }
-  }
-}
+  }}

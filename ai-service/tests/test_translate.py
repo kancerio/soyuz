@@ -47,6 +47,18 @@ def test_translate_defaults_source_language_to_auto(monkeypatch):
     assert response.json()["source_lang"] == "auto"
 
 
+def test_translate_accepts_an_additional_supported_language(monkeypatch):
+    monkeypatch.setenv("AI_MOCK_MODE", "true")
+
+    response = client.post(
+        "/translate",
+        json={"text": "Bom dia", "source_lang": "pt", "target_lang": "ru"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["source_lang"] == "pt"
+
+
 def test_translate_uses_configured_lm_studio(monkeypatch):
     class FakeClient:
         async def complete(self, messages, **kwargs):

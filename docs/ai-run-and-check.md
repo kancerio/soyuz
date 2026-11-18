@@ -16,9 +16,12 @@ NestJS API, `ai-service/` — FastAPI-провайдер. `app_ai` — отде�
 | Улучшение текста | `POST /messages/assist` | `POST /assist` | JSON `{ "text": "Пришлите отчет сегодня", "action": "formal" }`; `action` — `shorten`, `formal` или `friendly`; Backend возвращает `resultText`, `action`, `status`, `mock`. |
 | Сводка | `POST /messages/summary` | `POST /summary` | JSON `{ "messages": [{ "sender_id": "alice", "text": "Релиз в пятницу", "timestamp": "10:00" }], "language": "ru" }`; результат: `summary`, `decisions[]`, `participants[]`, `language`, `provider`, `status`. |
 | Расшифровка | `POST /messages/transcribe` | `POST /stt` | `multipart/form-data`, поле `file` на Backend / `audio` для прямого AI-запроса, необязательное поле `language`; Backend принимает до 20 MiB, AI service — до значения `MAX_AUDIO_BYTES` (по умолчанию 25 MiB). Результат: `transcript`, `language`, `provider`, `status`. |
+| Строительные термины | Backend route требуется добавить; см. [`construction-terms-integration.md`](construction-terms-integration.md) | `POST /construction-terms` | JSON с сообщением, языком отправителя, языком интерфейса и ISO-кодом страны; результат — точные диапазоны, краткие определения и ссылки на источники. |
 
-Языки: `ru`, `en`, `de`, `fr`, `es`, `zh`, `ar`; для языка источника перевода
-также разрешён `auto`. Текст ограничен 5 000 символами, сводка — 1–100
+Языки: 27 кодов `ru`, `en`, `de`, `fr`, `es`, `zh`, `ar`, `pt`, `it`, `nl`,
+`pl`, `uk`, `tr`, `ja`, `ko`, `hi`, `fa`, `sv`, `da`, `no`, `fi`, `cs`, `el`,
+`he`, `id`, `vi`, `th`; для языка источника перевода также разрешён `auto`.
+Frontend и Backend должны обновить свои списки языков до этого же набора. Текст ограничен 5 000 символами, сводка — 1–100
 сообщений. При ошибке валидации Backend отвечает HTTP 400, AI service — HTTP
 422 с `error.code`, `error.message`, `error.details[]` и `correlation_id`.
 Недоступный провайдер преобразуется Backend в HTTP 503; тайм-аут — 504; прочая
@@ -58,6 +61,24 @@ NestJS API, `ai-service/` — FastAPI-провайдер. `app_ai` — отде�
   "provider": "openai_compatible"
 }
 ```
+
+Строительные термины запрашиваются напрямую у AI-сервиса так:
+
+```json
+{
+  "text": "Нужно проверить армирование стены.",
+  "source_language": "ru",
+  "response_language": "en",
+  "country_code": "RU",
+  "max_terms": 5
+}
+```
+
+В real-ответе элементы `terms[]` содержат `term`, `start`, `end`, `definition`,
+`country_code`, `source_title`, `source_url` и `source_language`. `start`/`end`
+нулевые, `end` не включается; смещения рассчитаны в UTF-16 единицах для
+совместимости с индексами строк JavaScript. Mock-ответ всегда содержит пустой
+`terms[]` и `mock: true`, его нельзя считать результатом извлечения или поиска.
 
 ## Mock-запуск
 

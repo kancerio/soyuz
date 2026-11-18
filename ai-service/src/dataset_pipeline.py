@@ -11,7 +11,11 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
-SUPPORTED_LANGUAGES = {"ru", "en", "de", "fr", "es", "zh", "ar"}
+SUPPORTED_LANGUAGES = {
+    "ru", "en", "de", "fr", "es", "zh", "ar", "pt", "it", "nl", "pl",
+    "uk", "tr", "ja", "ko", "hi", "fa", "sv", "da", "no", "fi", "cs",
+    "el", "he", "id", "vi", "th",
+}
 SUPPORTED_TASKS = {"translate", "assist", "summary", "document_analysis", "stt"}
 SUPPORTED_SPLITS = {"train", "validation", "test"}
 SUPPORTED_SOURCES = {

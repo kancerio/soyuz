@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -11,7 +12,7 @@ from fastapi import File, Form, FastAPI, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
 from .llm_provider import (
@@ -22,12 +23,17 @@ from .llm_provider import (
     SpeechProviderTimeout,
     lm_studio_from_env,
 )
+from .reference_search import search_wikipedia_term
 
 MAX_TEXT_LENGTH = 5_000
 MAX_CONTEXT_LENGTH = 10_000
 MAX_AUDIO_BYTES = int(os.getenv("MAX_AUDIO_BYTES", str(25 * 1024 * 1024)))
 MAX_SUMMARY_MESSAGES = int(os.getenv("MAX_SUMMARY_MESSAGES", "100"))
-SUPPORTED_LANGUAGES = frozenset({"ru", "en", "de", "fr", "es", "zh", "ar"})
+SUPPORTED_LANGUAGES = frozenset({
+    "ru", "en", "de", "fr", "es", "zh", "ar", "pt", "it", "nl", "pl",
+    "uk", "tr", "ja", "ko", "hi", "fa", "sv", "da", "no", "fi", "cs",
+    "el", "he", "id", "vi", "th",
+})
 SUPPORTED_AUDIO_TYPES = {
     "audio/wav",
     "audio/x-wav",
@@ -46,7 +52,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("soyuz.ai")
 
-app = FastAPI(title="AI Service for Messenger", version="0.2.0")
+app = FastAPI(title="AI Service for Messenger", version="0.3.0")
 allowed_origins = [
     origin.strip()
     for origin in os.getenv(
@@ -266,6 +272,57 @@ class SummaryResponse(BaseModel):
     provider: str
 
 
+class ConstructionTermsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+    source_language: str
+    response_language: str
+    country_code: str
+    max_terms: int = Field(default=5, ge=1, le=10)
+
+    @field_validator("text")
+    @classmethod
+    def text_is_valid(cls, value: str) -> str:
+        return _clean_text(value, "text")
+
+    @field_validator("source_language", "response_language")
+    @classmethod
+    def languages_are_supported(cls, value: str, info) -> str:
+        return _clean_language(value, info.field_name)
+
+    @field_validator("country_code")
+    @classmethod
+    def country_code_is_iso_alpha2(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not re.fullmatch(r"[A-Z]{2}", normalized):
+            raise PydanticCustomError(
+                "invalid_country_code", "country_code must be a two-letter ISO code"
+            )
+        return normalized
+
+
+class ConstructionTermResult(BaseModel):
+    term: str
+    start: int
+    end: int
+    definition: str
+    country_code: str
+    source_title: str
+    source_url: str
+    source_language: str
+
+
+class ConstructionTermsResponse(BaseModel):
+    terms: list[ConstructionTermResult]
+    source_language: str
+    response_language: str
+    country_code: str
+    provider: str
+    mock: bool
+    correlation_id: str
+
+
 class STTResponse(BaseModel):
     transcript: str
     recognized_text: str
@@ -378,6 +435,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         413: "payload_too_large",
         415: "unsupported_media_type",
         422: "validation_error",
+        503: "provider_unavailable",
         504: "provider_timeout",
         502: "ai_provider_error",
     }
@@ -426,6 +484,266 @@ async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResp
 @app.get("/")
 def root():
     return {"message": "AI Service is running"}
+
+
+_LANGUAGE_NAMES = {
+    "ru": "Russian",
+    "en": "English",
+    "de": "German",
+    "fr": "French",
+    "es": "Spanish",
+    "zh": "Chinese",
+    "ar": "Arabic",
+}
+
+
+def _parse_json_object(raw_output: str, purpose: str) -> dict[str, Any]:
+    cleaned = raw_output.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+    try:
+        payload = json.loads(cleaned)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise LLMProviderError(f"LM Studio returned invalid {purpose} JSON") from exc
+    if not isinstance(payload, dict):
+        raise LLMProviderError(f"LM Studio returned invalid {purpose} JSON")
+    return payload
+
+
+def _extract_construction_terms(raw_output: str, text: str, max_terms: int) -> list[tuple[str, re.Match[str]]]:
+    payload = _parse_json_object(raw_output, "construction terms")
+    values = payload.get("terms")
+    if not isinstance(values, list):
+        raise LLMProviderError("LM Studio returned invalid construction terms")
+
+    matches: list[tuple[str, re.Match[str]]] = []
+    seen: set[str] = set()
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        term = value.strip()
+        folded = term.casefold()
+        if not term or len(term) > 100 or folded in seen:
+            continue
+        match = re.search(re.escape(term), text, flags=re.IGNORECASE)
+        if match is None:
+            continue
+        seen.add(folded)
+        matches.append((term, match))
+        if len(matches) >= max_terms:
+            break
+    return matches
+
+
+def _parse_construction_definitions(
+    raw_output: str, sourced_terms: list[dict[str, str]]
+) -> dict[str, str]:
+    payload = _parse_json_object(raw_output, "construction term definitions")
+    definitions = payload.get("definitions")
+    if not isinstance(definitions, list):
+        raise LLMProviderError("LM Studio returned invalid construction term definitions")
+
+    allowed = {source["term"] for source in sourced_terms}
+    result: dict[str, str] = {}
+    for item in definitions:
+        if not isinstance(item, dict):
+            continue
+        term = item.get("term")
+        definition = item.get("definition")
+        if (
+            isinstance(term, str)
+            and term in allowed
+            and isinstance(definition, str)
+            and definition.strip()
+        ):
+            result[term] = definition.strip()[:500]
+    return result
+
+
+def _utf16_offset(text: str, codepoint_offset: int) -> int:
+    """Convert Python codepoint offsets to JavaScript UTF-16 string offsets."""
+
+    return len(text[:codepoint_offset].encode("utf-16-le")) // 2
+
+
+@app.post(
+    "/construction-terms",
+    response_model=ConstructionTermsResponse,
+    responses={
+        422: {"model": ErrorResponse, "description": "Request validation failed"},
+        502: {"model": ErrorResponse, "description": "AI or reference provider error"},
+        503: {"model": ErrorResponse, "description": "Provider unavailable"},
+        504: {"model": ErrorResponse, "description": "Provider timeout"},
+    },
+)
+async def construction_terms(req: ConstructionTermsRequest, request: Request):
+    started = perf_counter()
+    correlation_id = get_correlation_id(request)
+    provider_name = ai_provider_name()
+    if mock_mode_enabled():
+        return ConstructionTermsResponse(
+            terms=[],
+            source_language=req.source_language,
+            response_language=req.response_language,
+            country_code=req.country_code,
+            provider="mock",
+            mock=True,
+            correlation_id=correlation_id,
+        )
+
+    logger.info(
+        "construction_terms_request provider=%s country=%s source_language=%s "
+        "response_language=%s correlation_id=%s text_length=%s",
+        provider_name,
+        req.country_code,
+        req.source_language,
+        req.response_language,
+        correlation_id,
+        len(req.text),
+    )
+    try:
+        llm_client = get_llm_client()
+        if llm_client is None:
+            raise ServiceUnavailableError("Construction term extraction requires a real AI provider")
+
+        raw_terms = await llm_client.complete(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Ты извлекаешь строительную терминологию из сообщений. "
+                        "Верни только JSON {terms: string[]}. Включай только "
+                        "специальные термины строительной отрасли, копируй каждый "
+                        "точно из текста и не добавляй общеупотребительные слова."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Язык сообщения: {req.source_language}; страна отправителя: "
+                        f"{req.country_code}; максимум терминов: {req.max_terms}.\n"
+                        f"Сообщение:\n{req.text}"
+                    ),
+                },
+            ],
+            json_mode=True,
+            temperature=0.1,
+        )
+        extracted = _extract_construction_terms(raw_terms, req.text, req.max_terms)
+        if not extracted:
+            return ConstructionTermsResponse(
+                terms=[], source_language=req.source_language,
+                response_language=req.response_language, country_code=req.country_code,
+                provider=provider_name, mock=False, correlation_id=correlation_id,
+            )
+
+        try:
+            sources = await asyncio.gather(*[
+                search_wikipedia_term(term, req.source_language, req.country_code)
+                for term, _match in extracted
+            ])
+        except ProviderUnavailableError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Construction reference search is unavailable",
+            ) from exc
+        sourced_terms: list[dict[str, str]] = []
+        for (term, _match), source in zip(extracted, sources):
+            if source:
+                sourced_terms.append({"term": term, **source})
+        if not sourced_terms:
+            return ConstructionTermsResponse(
+                terms=[], source_language=req.source_language,
+                response_language=req.response_language, country_code=req.country_code,
+                provider=provider_name, mock=False, correlation_id=correlation_id,
+            )
+
+        source_context = [
+            {
+                "term": source["term"],
+                "source_title": source["title"],
+                "source_language": source["language"],
+                "source_excerpt": source["extract"],
+            }
+            for source in sourced_terms
+        ]
+        raw_definitions = await llm_client.complete(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Ты объясняешь строительные термины. Используй только "
+                        "приведённые выдержки источников: не добавляй факты, которых "
+                        "в них нет. Кратко переведи объяснение на запрошенный язык. "
+                        "Верни только JSON {definitions: [{term: string, definition: string}]}."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Язык ответа интерфейса: {_LANGUAGE_NAMES[req.response_language]}.\n"
+                        f"Страна контекста отправителя: {req.country_code}.\n"
+                        "Source excerpt data:\n"
+                        + json.dumps(source_context, ensure_ascii=False)
+                    ),
+                },
+            ],
+            json_mode=True,
+            temperature=0.1,
+        )
+        definitions = _parse_construction_definitions(raw_definitions, sourced_terms)
+        source_by_term = {source["term"]: source for source in sourced_terms}
+        results = []
+        for term, match in extracted:
+            source = source_by_term.get(term)
+            definition = definitions.get(term)
+            if source is None or definition is None:
+                continue
+            results.append(ConstructionTermResult(
+                term=term,
+                start=_utf16_offset(req.text, match.start()),
+                end=_utf16_offset(req.text, match.end()),
+                definition=definition,
+                country_code=req.country_code,
+                source_title=source["title"],
+                source_url=source["url"],
+                source_language=source["language"],
+            ))
+    except ServiceUnavailableError:
+        raise
+    except ProviderUnavailableError as exc:
+        raise ServiceUnavailableError(str(exc)) from exc
+    except LLMProviderTimeout as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except LLMProviderError as exc:
+        logger.exception(
+            "construction_terms_provider_error correlation_id=%s", correlation_id
+        )
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    logger.info(
+        "construction_terms_response provider=%s country=%s terms=%s "
+        "correlation_id=%s duration_ms=%s",
+        provider_name,
+        req.country_code,
+        len(results),
+        correlation_id,
+        int((perf_counter() - started) * 1000),
+    )
+    return ConstructionTermsResponse(
+        terms=results,
+        source_language=req.source_language,
+        response_language=req.response_language,
+        country_code=req.country_code,
+        provider=provider_name,
+        mock=False,
+        correlation_id=correlation_id,
+    )
 
 
 def _mock_assist(text: str, action: str) -> str:

@@ -102,8 +102,10 @@ models and live services.
 
 ## Limits and verification boundary
 
-Supported language codes are `ru`, `en`, `de`, `fr`, `es`, `zh`, and `ar`;
-source language for translation can also be `auto`. Text is limited to 5,000
+The current AI API accepts 27 languages listed in
+[`language_codes.md`](language_codes.md); the original smoke run below was
+limited to the language pairs in its test messages. Translation source language
+can also be `auto`. Text is limited to 5,000
 characters, assist context to 10,000 characters, and summaries to 100 messages.
 Backend voice uploads are limited to 20 MiB. The direct AI STT endpoint allows
 25 MiB by default and accepts WAV, MP3, WebM, OGG, and M4A.

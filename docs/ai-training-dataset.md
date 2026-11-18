@@ -19,7 +19,9 @@
 Для `/assist` закреплены действия `shorten`, `formal` и `friendly`. Старые
 значения `change_tone` и `suggest` в новый датасет не попадают.
 
-Поддерживаемые коды языка: `ru`, `en`, `de`, `fr`, `es`, `zh`, `ar`.
+Поддерживаемые коды языка: `ru`, `en`, `de`, `fr`, `es`, `zh`, `ar`, `pt`, `it`,
+`nl`, `pl`, `uk`, `tr`, `ja`, `ko`, `hi`, `fa`, `sv`, `da`, `no`, `fi`, `cs`,
+`el`, `he`, `id`, `vi`, `th`.
 
 ## Формат строки
 
