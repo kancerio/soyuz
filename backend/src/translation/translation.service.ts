@@ -356,31 +356,13 @@ export class TranslationService {
     let lastError: any;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        let response;
-        try {
-          // Согласованный контракт: POST /summary
-          response = await firstValueFrom(
-            this.httpService.post(
-              `${this.aiBaseUrl}/summary`,
-              payload,
-              { timeout: this.timeoutMs },
-            ),
-          );
-        } catch (postErr: any) {
-          if (postErr.response?.status === 404 || postErr.response?.status === 422) {
-            // Фолбэк на /secretary
-            const combinedText = messages.map((m) => m.text).join('\n');
-            response = await firstValueFrom(
-              this.httpService.post(
-                `${this.aiBaseUrl}/secretary`,
-                { action: 'summary', details: combinedText },
-                { timeout: this.timeoutMs },
-              ),
-            );
-          } else {
-            throw postErr;
-          }
-        }
+        const response = await firstValueFrom(
+          this.httpService.post(
+            `${this.aiBaseUrl}/summary`,
+            payload,
+            { timeout: this.timeoutMs },
+          ),
+        );
 
         const data = response?.data || {};
         const summary =

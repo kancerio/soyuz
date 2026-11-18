@@ -604,7 +604,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const senderSocketId = this.userToSocket.get(message.userId);
     const senderSocket = senderSocketId ? this.server?.sockets?.sockets?.get(senderSocketId) : null;
 
-    this.server.to(roomName).emit('new_message', message);
+    // If the sender has an active socket, Socket.IO's socket.to() sends the
+    // event to other chat members while excluding the sender. The sender
+    // already receives the REST response or WebSocket acknowledgement.
+    if (senderSocket) {
+      senderSocket.to(roomName).emit('new_message', message);
+    } else {
+      this.server.to(roomName).emit('new_message', message);
+    }
 
     logger.info('Message broadcast', {
       event: 'broadcast_new_message',
