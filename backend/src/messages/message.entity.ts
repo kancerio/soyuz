@@ -63,6 +63,11 @@ export class Message {
 
   @Column({ type: 'varchar', length: 20, default: 'pending' })
   translateStatus: TranslateStatus;
+
+  // Персональные переводы сообщения на язык каждого получателя:
+  // { "en": { "text": "...", "status": "completed" }, ... }
+  @Column({ type: 'jsonb', nullable: true })
+  translations: Record<string, { text: string; status: 'completed' | 'failed' }> | null;
   // =======================================
 
   // ========== ПОЛЯ ДЛЯ ГОЛОСОВЫХ СООБЩЕНИЙ И STT ==========

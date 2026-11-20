@@ -15,8 +15,33 @@ type SettingsCategory =
   | 'language'
   | 'help';
 
+// ISO 3166-1 alpha-2 — используется как контекст поиска строительных терминов
+const COUNTRY_OPTIONS: Array<{ code: string; name: string }> = [
+  { code: 'RU', name: 'Россия' },
+  { code: 'US', name: 'США' },
+  { code: 'GB', name: 'Великобритания' },
+  { code: 'DE', name: 'Германия' },
+  { code: 'FR', name: 'Франция' },
+  { code: 'ES', name: 'Испания' },
+  { code: 'IT', name: 'Италия' },
+  { code: 'PT', name: 'Португалия' },
+  { code: 'NL', name: 'Нидерланды' },
+  { code: 'PL', name: 'Польша' },
+  { code: 'UA', name: 'Украина' },
+  { code: 'BY', name: 'Беларусь' },
+  { code: 'KZ', name: 'Казахстан' },
+  { code: 'TR', name: 'Турция' },
+  { code: 'CN', name: 'Китай' },
+  { code: 'JP', name: 'Япония' },
+  { code: 'KR', name: 'Корея' },
+  { code: 'IN', name: 'Индия' },
+  { code: 'BR', name: 'Бразилия' },
+  { code: 'AE', name: 'ОАЭ' },
+  { code: 'IL', name: 'Израиль' },
+];
+
 export default function SettingsForm() {
-  const { user, logout, updateUser, changeLanguage } = useUser();
+  const { user, logout, updateUser, changeLanguage, changeCountry } = useUser();
   const { language, setLanguage, t } = useLanguage();
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>('account');
 
@@ -276,9 +301,18 @@ export default function SettingsForm() {
                 <span className="text-sm font-medium text-[#1a2038] dark:text-[#e8ecf4]">
                   {t('settings_country')}
                 </span>
-                <span className="text-sm text-gray-400">
-                  {user.country || (language === 'en' ? 'Russia' : 'Россия')} ›
-                </span>
+                <select
+                  value={(user.country || 'RU').toUpperCase()}
+                  onChange={(e) => changeCountry(e.target.value)}
+                  className="text-sm text-gray-600 dark:text-gray-300 bg-transparent border border-[#dde4f0] dark:border-[#1e2955] rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  aria-label={t('settings_country')}
+                >
+                  {COUNTRY_OPTIONS.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name} ({c.code})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Язык интерфейса с рабочим переключателем */}

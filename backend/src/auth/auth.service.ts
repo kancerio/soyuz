@@ -35,6 +35,7 @@ export class AuthService {
     username: registerDto.username,
     password: hashedPassword,
     preferred_language: registerDto.preferred_language || 'ru', // если не указан — 'ru'
+    country_code: (registerDto.country_code || 'RU').toUpperCase(),
   });
 
   // Генерируем токены
@@ -50,6 +51,7 @@ export class AuthService {
       email: user.email,
       username: user.username,
       language: user.preferred_language,
+      country: user.country_code,
     },
     ...tokens,
   };
@@ -87,6 +89,7 @@ export class AuthService {
         email: user.email,
         username: user.username,
         language: user.preferred_language,
+        country: user.country_code,
       },
       ...tokens,
     };

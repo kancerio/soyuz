@@ -10,7 +10,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useSocketStatus } from '@/context/SocketContext';
 import AIToolsPanel from './AIToolsPanel';
 import GroupMembersModal from './GroupMembersModal';
-import TranslationBlock from './TranslationBlock';
+import MessageText from './MessageText';
 import RewritePanel, { RewriteAction, RewriteState } from './RewritePanel';
 import LoadingState from '@/components/ui/LoadingState';
 import Avatar from '@/components/ui/Avatar';
@@ -37,6 +37,7 @@ function mergeMessages(prev: Message[], incoming: Message[]): Message[] {
         ...m,
         translatedText: m.translatedText ?? existing.translatedText,
         translateStatus: m.translateStatus ?? existing.translateStatus,
+        translations: m.translations ?? existing.translations,
         sourceLang: m.sourceLang ?? existing.sourceLang,
         targetLang: m.targetLang ?? existing.targetLang,
         type: m.type ?? existing.type,
@@ -91,7 +92,9 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
   const [showDetailsSidebar, setShowDetailsSidebar] = useState(false);
   const [showPinned, setShowPinned] = useState(true);
 
-  const targetLanguage = (user?.language || 'en').toLowerCase();
+  // Язык интерфейса текущего пользователя: он же язык его сообщений
+  // и язык, на который он получает переводы
+  const myLanguage = (user?.language || 'ru').toLowerCase();
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -199,8 +202,9 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
     const handleMessageTranslated = (data: {
       messageId: number;
       chatId: number;
-      translatedText: string;
-      translateStatus: 'completed' | 'failed';
+      sourceLang?: string;
+      translations?: Record<string, { text: string; status: 'completed' | 'failed' }>;
+      translateStatus: 'completed' | 'failed' | 'skipped';
     }) => {
       if (Number(data.chatId) !== chatIdNum) return;
       setMessages((prev) =>
@@ -208,7 +212,8 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
           m.id === data.messageId
             ? {
                 ...m,
-                translatedText: data.translatedText,
+                sourceLang: data.sourceLang ?? m.sourceLang,
+                translations: data.translations ?? m.translations,
                 translateStatus: data.translateStatus,
               }
             : m
@@ -368,9 +373,10 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
       chatId: chatIdNum,
       timestamp: new Date(),
       originalText: content,
-      sourceLang: 'auto',
-      targetLang: targetLanguage,
+      sourceLang: myLanguage,
+      targetLang: null,
       translatedText: null,
+      translations: null,
       translateStatus: 'pending',
       localStatus: 'sending',
       type: 'text',
@@ -379,8 +385,9 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
 
     // Источник истины — ответ REST. WS-эхо подхватит черновик в handleNewMessage,
     // дальнейшие delivered/read приходят через message_status_update.
+    // Пишем на языке своих настроек — получатели увидят перевод на свой язык.
     try {
-      const saved = await apiClient.sendMessage(chatIdNum, content, 'auto', targetLanguage);
+      const saved = await apiClient.sendMessage(chatIdNum, content, myLanguage);
       if (saved && saved.id) {
         setMessages((prev) =>
           prev.map((m) =>
@@ -389,7 +396,7 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                   ...m,
                   id: saved.id,
                   localStatus: 'sent',
-                  translatedText: saved.translatedText || m.translatedText,
+                  translations: saved.translations ?? m.translations,
                   translateStatus: saved.translateStatus || m.translateStatus,
                   timestamp: saved.timestamp ?? m.timestamp,
                 }
@@ -1057,10 +1064,8 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                       />
                     </div>
                   ) : (
-                    /* Обычный текст */
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap break-words select-text">
-                      {msg.content}
-                    </p>
+                    /* Обычный текст: перевод основным, оригинал и термины — по кнопкам */
+                    <MessageText message={msg} isOwn={isOwn} myLanguage={myLanguage} />
                   )}
 
                   {/* Нижняя строка: Время + статус доставки */}
@@ -1075,11 +1080,6 @@ export default function ChatWindow({ chatId }: ChatWindowProps) {
                     </span>
                     {isOwn && renderStatusTicks(msg.localStatus)}
                   </div>
-
-                  {/* Блок перевода для текстовых сообщений */}
-                  {msg.type !== 'voice' && !isFile && (
-                    <TranslationBlock message={msg} isOwn={isOwn} />
-                  )}
                 </div>
               </div>
             );

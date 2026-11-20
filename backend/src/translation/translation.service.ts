@@ -48,6 +48,29 @@ export interface SummaryMessageInput {
   timestamp?: string;
 }
 
+export interface ConstructionTerm {
+  term: string;
+  start: number;
+  end: number;
+  definition: string;
+  country_code: string;
+  source_title: string;
+  source_url: string;
+  source_language: string;
+}
+
+export interface ConstructionTermsResult {
+  terms: ConstructionTerm[];
+  source_language: string;
+  response_language: string;
+  country_code: string;
+  provider: string;
+  mock: boolean;
+  status: 'completed' | 'failed';
+  error?: string;
+  providerStatus?: number;
+}
+
 export interface StructuredSummaryResult extends SummaryResult {
   decisions: string[];
   participants: string[];
@@ -315,6 +338,93 @@ export class TranslationService {
       transcript: '',
       language,
       status: 'failed',
+      error: lastError?.message,
+      providerStatus: lastError?.response?.status,
+    };
+  }
+
+  /**
+   * Поиск строительных терминов через AI /construction-terms.
+   * Диапазоны start/end — UTF-16 смещения, пробрасываются клиенту без переименования.
+   */
+  async constructionTerms(
+    text: string,
+    sourceLanguage: string,
+    responseLanguage: string,
+    countryCode: string,
+    maxTerms: number = 5,
+  ): Promise<ConstructionTermsResult> {
+    const failed: ConstructionTermsResult = {
+      terms: [],
+      source_language: sourceLanguage,
+      response_language: responseLanguage,
+      country_code: countryCode,
+      provider: 'unknown',
+      mock: false,
+      status: 'failed',
+    };
+
+    const trimmed = text.trim();
+    if (!trimmed || trimmed.length > 5000) {
+      return failed;
+    }
+
+    const payload = {
+      text: trimmed,
+      source_language: sourceLanguage,
+      response_language: responseLanguage,
+      country_code: countryCode,
+      max_terms: maxTerms,
+    };
+
+    let lastError: any = null;
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        const response = await firstValueFrom(
+          this.httpService.post(`${this.aiBaseUrl}/construction-terms`, payload, {
+            timeout: this.timeoutMs,
+          }),
+        );
+
+        const data = response?.data || {};
+        const rawTerms = Array.isArray(data.terms) ? data.terms : [];
+        // Пропускаем записи без валидных полей — клиент подсвечивает по start/end
+        const terms: ConstructionTerm[] = rawTerms.filter(
+          (t: any) =>
+            t &&
+            typeof t.term === 'string' &&
+            Number.isInteger(t.start) &&
+            Number.isInteger(t.end) &&
+            typeof t.definition === 'string' &&
+            typeof t.source_url === 'string',
+        );
+
+        return {
+          terms,
+          source_language: data.source_language || sourceLanguage,
+          response_language: data.response_language || responseLanguage,
+          country_code: data.country_code || countryCode,
+          provider: data.provider || 'unknown',
+          mock: data.mock || false,
+          status: 'completed',
+        };
+      } catch (error) {
+        lastError = error;
+        const status = error.response?.status;
+        if (status === 503 || error.code === 'ECONNABORTED') {
+          this.logger.warn(
+            `Construction terms attempt ${attempt + 1} failed (${status || 'timeout'}), retrying...`,
+          );
+          continue;
+        }
+        break;
+      }
+    }
+
+    this.logger.error(`Construction terms failed: ${lastError?.message}`);
+    return {
+      ...failed,
+      provider: failed.provider,
       error: lastError?.message,
       providerStatus: lastError?.response?.status,
     };

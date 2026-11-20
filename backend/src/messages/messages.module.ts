@@ -6,6 +6,7 @@ import { Message } from './message.entity';
 import { UsersModule } from '../users/users.module';
 import { ChatsModule } from '../chats/chats.module';
 import { TranslationModule } from '../translation/translation.module';
+import { RedisModule } from '../redis/redis.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { TranslationModule } from '../translation/translation.module';
     UsersModule,
     forwardRef(() => ChatsModule),  // ← forwardRef для ChatsModule
     TranslationModule,
+    RedisModule,
   ],
   controllers: [MessagesController],
   providers: [MessagesService],

@@ -23,7 +23,8 @@ src/
 │   └── layout.tsx
 ├── components/
 │   ├── chat/             # ChatWindow, ChatList, VoiceComposer, AudioPlayer,
-│   │                     # TranslationBlock, AIToolsPanel, RewritePanel,
+│   │                     # MessageText (перевод + строительные термины),
+│   │                     # AIToolsPanel, RewritePanel,
 │   │                     # модалки групп (CreateGroupModal, GroupMembersModal) и т.д.
 │   ├── auth/             # LoginForm, RegisterForm
 │   ├── profile/, settings/
@@ -47,8 +48,8 @@ src/
   авторизации (`auth` с userId), в чате — `join_chat`. События: new message,
   message_translated, message_transcribed, message_voice_summary.
 - **Message-тип** (`types/chat.ts`): текст + голосовые (voiceFileId, transcript,
-  summary, voiceMetadata, uploadStatus), AI-перевод (translatedText и т.п.),
-  статусы доставки/прочтения. `localStatus` — только фронт.
+  summary, voiceMetadata, uploadStatus), AI-перевод (translations на язык
+  каждого получателя и т.п.), статусы доставки/прочтения. `localStatus` — только фронт.
 - **Статусы с backend мапятся**: `mapBackendMessage` в apiClient.ts
   (sttStatus: pending→processing, none→skipped; summaryStatus: none→not_needed).
 - **mergeMessages** в ChatWindow.tsx: мерж по id, приоритет непустых полей

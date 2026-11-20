@@ -1,6 +1,5 @@
 import { IsIn, IsString, Matches, MaxLength, MinLength } from 'class-validator';
-
-const SUPPORTED_LANGUAGES = ['ru', 'en', 'de', 'fr', 'es', 'zh', 'ar'];
+import { SUPPORTED_LANGUAGES } from '../../common/languages';
 
 export class TranslateDto {
   @IsString()
@@ -12,6 +11,6 @@ export class TranslateDto {
   @IsIn([...SUPPORTED_LANGUAGES, 'auto'])
   source_lang: string;
 
-  @IsIn(SUPPORTED_LANGUAGES)
+  @IsIn([...SUPPORTED_LANGUAGES])
   target_lang: string;
 }

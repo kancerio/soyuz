@@ -627,7 +627,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleMessageTranslated(payload: {
     messageId: number;
     chatId: number;
-    translatedText: string;
+    sourceLang?: string;
+    translations?: Record<string, { text: string; status: 'completed' | 'failed' }>;
     translateStatus: string;
   }) {
     this.server.to(`chat_${payload.chatId}`).emit('message_translated', payload);

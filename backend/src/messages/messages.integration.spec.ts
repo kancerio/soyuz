@@ -19,6 +19,7 @@ import { Message } from './message.entity';
 import { UsersService } from '../users/users.service';
 import { ChatsService } from '../chats/chats.service';
 import { TranslationService } from '../translation/translation.service';
+import { RedisService } from '../redis/redis.service';
 
 describe('Интеграционные тесты (Задача 6)', () => {
   let service: MessagesService;
@@ -116,6 +117,14 @@ describe('Интеграционные тесты (Задача 6)', () => {
           useValue: mockTranslationService,
         },
         {
+          provide: RedisService,
+          useValue: {
+            get: jest.fn().mockResolvedValue(null),
+            set: jest.fn().mockResolvedValue(undefined),
+            del: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
           provide: EventEmitter2,
           useClass: EventEmitter2,
         },
@@ -145,19 +154,24 @@ describe('Интеграционные тесты (Задача 6)', () => {
       );
 
       expect(sentMessage.content).toBe('Привет, мир');
-      expect(sentMessage.targetLang).toBe('en'); // определено по собеседнику
+      expect(sentMessage.sourceLang).toBe('ru'); // язык настроек отправителя
       expect(sentMessage.translateStatus).toBe('pending');
       expect(eventEmitter.emit).toHaveBeenCalledWith('message.created', expect.any(Object));
 
       // Ждём завершения фонового перевода
       await new Promise((resolve) => setTimeout(resolve, 50));
 
+      // Персональный перевод: собеседник (userId: 2, en) получает перевод на en,
+      // отправитель (ru) видит оригинал без перевода
       expect(eventEmitter.emit).toHaveBeenCalledWith(
         'message.translated',
         expect.objectContaining({
           messageId: sentMessage.id,
           chatId: 10,
-          translatedText: 'Hello, world',
+          sourceLang: 'ru',
+          translations: {
+            en: { text: 'Hello, world', status: 'completed' },
+          },
           translateStatus: 'completed',
         }),
       );
@@ -169,8 +183,10 @@ describe('Интеграционные тесты (Задача 6)', () => {
         id: sentMessage.id,
         content: 'Привет, мир',
         originalText: 'Привет, мир',
-        translatedText: 'Hello, world',
-        targetLang: 'en',
+        sourceLang: 'ru',
+        translations: {
+          en: { text: 'Hello, world', status: 'completed' },
+        },
         translateStatus: 'completed',
       });
     });

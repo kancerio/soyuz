@@ -94,6 +94,11 @@ export class MessagesController {
     );
   }
 
+  @Post(':messageId/construction-terms')
+  async getConstructionTerms(@Request() req, @Param('messageId') messageId: string) {
+    return this.messagesService.getConstructionTerms(+messageId, req.user.userId);
+  }
+
   @Post('summary')
   async summarize(@Body() body: SummaryDto) {
     return this.messagesService.summarizeMessages(body.messages, body.language);

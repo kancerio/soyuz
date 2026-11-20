@@ -18,6 +18,7 @@ import { Message } from './message.entity';
 import { UsersService } from '../users/users.service';
 import { ChatsService } from '../chats/chats.service';
 import { TranslationService } from '../translation/translation.service';
+import { RedisService } from '../redis/redis.service';
 
 describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
   let service: MessagesService;
@@ -25,6 +26,7 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
   let mockUsersService: any;
   let mockChatsService: any;
   let mockTranslationService: any;
+  let mockRedisService: any;
   let mockEventEmitter: any;
 
   beforeEach(async () => {
@@ -93,6 +95,32 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
         summary: 'Краткое резюме',
         status: 'completed',
       }),
+      constructionTerms: jest.fn().mockResolvedValue({
+        terms: [
+          {
+            term: 'армирование',
+            start: 16,
+            end: 27,
+            definition: 'Reinforcement of a concrete structure.',
+            country_code: 'RU',
+            source_title: 'Армирование',
+            source_url: 'https://ru.wikipedia.org/wiki/Армирование',
+            source_language: 'ru',
+          },
+        ],
+        source_language: 'ru',
+        response_language: 'en',
+        country_code: 'RU',
+        provider: 'lmstudio',
+        mock: false,
+        status: 'completed',
+      }),
+    };
+
+    mockRedisService = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(undefined),
+      del: jest.fn().mockResolvedValue(undefined),
     };
 
     mockEventEmitter = {
@@ -117,6 +145,10 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
         {
           provide: TranslationService,
           useValue: mockTranslationService,
+        },
+        {
+          provide: RedisService,
+          useValue: mockRedisService,
         },
         {
           provide: EventEmitter2,
@@ -156,14 +188,14 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
     ).rejects.toThrow(GatewayTimeoutException);
   });
 
-  it('должен автоматически определить targetLang по языку собеседника в чате', async () => {
-    // Отправитель - userId: 10 (en), собеседник - userId: 20 (ru)
-    const result = await service.sendMessageWithTranslation(1, 10, 'Hello');
+  it('должен сохранять язык сообщения по настройкам отправителя, если sourceLang не передан', async () => {
+    // Отправитель - userId: 10 (en): сообщение пишется на языке его настроек
+    await service.sendMessageWithTranslation(1, 10, 'Hello');
 
     expect(mockMessagesRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({
         content: 'Hello',
-        targetLang: 'ru', // выбран язык собеседника (userId: 20)
+        sourceLang: 'en',
         translateStatus: 'pending',
       }),
     );
@@ -510,6 +542,82 @@ describe('MessagesService - Unified Message Pipeline (Задача 1)', () => {
       }
     });
   });
+  describe('Строительные термины (POST /messages/:id/construction-terms)', () => {
+    const termsMessage = {
+      id: 101,
+      content: 'Нужно проверить армирование стены.',
+      originalText: 'Нужно проверить армирование стены.',
+      sourceLang: 'ru',
+      chatId: 1,
+      userId: 10,
+      isDeleted: false,
+      voiceFileId: null,
+    };
+
+    beforeEach(() => {
+      mockMessagesRepository.findOne.mockResolvedValue(termsMessage);
+    });
+
+    it('должен блокировать запрос терминов для неучастника чата (403)', async () => {
+      await expect(service.getConstructionTerms(101, 999)).rejects.toThrow(ForbiddenException);
+      expect(mockTranslationService.constructionTerms).not.toHaveBeenCalled();
+    });
+
+    it('должен брать текст, язык и страну из сообщения и профиля отправителя', async () => {
+      const result = await service.getConstructionTerms(101, 20);
+
+      expect(mockTranslationService.constructionTerms).toHaveBeenCalledWith(
+        'Нужно проверить армирование стены.',
+        'ru', // язык сообщения
+        'en', // язык интерфейса запрашивающего (mockUsersService)
+        'RU', // страна отправителя по умолчанию
+      );
+      expect(result.status).toBe('completed');
+      expect(result.terms[0]).toMatchObject({
+        term: 'армирование',
+        start: 16,
+        end: 27,
+        source_url: 'https://ru.wikipedia.org/wiki/Армирование',
+      });
+    });
+
+    it('должен отдавать закэшированный результат без повторного вызова AI', async () => {
+      mockRedisService.get.mockResolvedValueOnce({
+        terms: [],
+        status: 'completed',
+        provider: 'lmstudio',
+        mock: false,
+      });
+
+      const result = await service.getConstructionTerms(101, 20);
+
+      expect(result.terms).toEqual([]);
+      expect(mockTranslationService.constructionTerms).not.toHaveBeenCalled();
+    });
+
+    it('должен пробрасывать 503 при недоступности AI, не ломая сообщение', async () => {
+      mockTranslationService.constructionTerms.mockResolvedValueOnce({
+        terms: [],
+        status: 'failed',
+        providerStatus: 503,
+        error: 'provider unavailable',
+      });
+
+      await expect(service.getConstructionTerms(101, 20)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+    });
+
+    it('должен отклонять анализ удалённого сообщения', async () => {
+      mockMessagesRepository.findOne.mockResolvedValueOnce({
+        ...termsMessage,
+        isDeleted: true,
+      });
+
+      await expect(service.getConstructionTerms(101, 20)).rejects.toThrow(BadRequestException);
+    });
+  });
+
   describe('markAsDelivered & markAsRead - проверка прав доступа (Задача спринта)', () => {
     it('должен блокировать markAsDelivered для неучастника чата (403 Forbidden)', async () => {
       mockMessagesRepository.findOne.mockResolvedValueOnce({

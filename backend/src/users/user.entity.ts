@@ -22,4 +22,8 @@ export class User {
 
   @Column({ type: 'varchar', default: 'en', length: 2 })
   preferred_language: string;
+
+  // Двухбуквенный ISO 3166-1 alpha-2 код страны — контекст для строительных терминов
+  @Column({ name: 'country_code', type: 'varchar', default: 'RU', length: 2 })
+  country_code: string;
 }

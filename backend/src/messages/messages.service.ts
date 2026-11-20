@@ -12,7 +12,10 @@ import {
   TranslationService,
   AssistResult,
   SummaryMessageInput,
+  ConstructionTermsResult,
 } from '../translation/translation.service';
+import { RedisService } from '../redis/redis.service';
+import { normalizeLanguage } from '../common/languages';
 
 const ALLOWED_VOICE_MIME_TYPES = [
   'audio/wav',
@@ -106,6 +109,7 @@ export class MessagesService {
     @Inject(forwardRef(() => ChatsService))
     private chatsService: ChatsService,
     private translationService: TranslationService,
+    private redisService: RedisService,
     private eventEmitter: EventEmitter2,
   ) {}
 
@@ -162,20 +166,20 @@ export class MessagesService {
       throw new NotFoundException('Пользователь не найден');
     }
 
-    // 2. Определяем корректный targetLang
-    let resolvedTargetLang = targetLang;
-    if (!resolvedTargetLang || resolvedTargetLang === 'auto') {
-      const members = await this.chatsService.getChatMembers(chatId);
-      const otherMember = members.find((m) => m.userId !== userId);
-      resolvedTargetLang = otherMember?.user?.preferred_language || 'en';
-    }
+    // 2. Язык сообщения: явный sourceLang либо язык настроек отправителя
+    // (пользователь пишет на языке своих настроек; 'auto' не даёт
+    // детерминированно решить, кому перевод не нужен)
+    const resolvedSourceLang =
+      sourceLang && sourceLang !== 'auto'
+        ? sourceLang
+        : normalizeLanguage(user.preferred_language) || 'ru';
 
     // 3. Сохраняем оригинал сообщения
     const message = this.messagesRepository.create({
       content,
       originalText: content,
-      sourceLang: sourceLang || 'auto',
-      targetLang: resolvedTargetLang,
+      sourceLang: resolvedSourceLang,
+      targetLang: targetLang || undefined,
       userId,
       chatId,
       translateStatus: 'pending',
@@ -195,28 +199,67 @@ export class MessagesService {
     // 4. Отправляем единое событие создания сообщения для realtime-рассылки в WebSocket
     this.eventEmitter.emit('message.created', fullMessage);
 
-    // 5. Запускаем перевод в фоне (ошибка AI не ломает сообщение)
-    this.translateInBackground(saved.id, fullMessage.chatId, content, sourceLang || 'auto', resolvedTargetLang);
+    // 5. Переводим на языки участников в фоне (ошибка AI не ломает сообщение)
+    this.translateForParticipants(saved.id, fullMessage.chatId, content, resolvedSourceLang);
 
     // 6. Сразу возвращаем созданное сообщение
     return { ...fullMessage };
   }
 
-  private async translateInBackground(
+  /**
+   * Персональный перевод: каждый участник чата получает сообщение на языке
+   * своих настроек. Участники с тем же языком, что и сообщение, перевод не
+   * получают — они видят оригинал.
+   */
+  private async translateForParticipants(
     messageId: number,
     chatId: number,
     text: string,
     sourceLang: string,
-    targetLang: string,
   ): Promise<void> {
     try {
-      const result = await this.translationService.translate(text, sourceLang, targetLang);
-      const translateStatus = result.status === 'completed' ? 'completed' : 'failed';
+      const members = await this.chatsService.getChatMembers(chatId);
+      const targetLangs = [
+        ...new Set(
+          members
+            .map((m) => normalizeLanguage(m.user?.preferred_language))
+            .filter((lang): lang is string => Boolean(lang)),
+        ),
+      ].filter((lang) => lang !== sourceLang);
+
+      // Все участники говорят на языке сообщения — перевод не нужен
+      if (targetLangs.length === 0) {
+        await this.messagesRepository.update(messageId, {
+          translateStatus: 'skipped',
+          translations: {},
+        });
+        this.eventEmitter.emit('message.translated', {
+          messageId,
+          chatId,
+          sourceLang,
+          translations: {},
+          translateStatus: 'skipped',
+        });
+        return;
+      }
+
+      const translations: Record<string, { text: string; status: 'completed' | 'failed' }> = {};
+      let anySuccess = false;
+
+      for (const lang of targetLangs) {
+        const result = await this.translationService.translate(text, sourceLang, lang);
+        if (result.status === 'completed') {
+          translations[lang] = { text: result.translatedText, status: 'completed' };
+          anySuccess = true;
+        } else {
+          translations[lang] = { text: '', status: 'failed' };
+        }
+      }
+
+      const translateStatus = anySuccess ? 'completed' : 'failed';
 
       await this.messagesRepository.update(messageId, {
-        translatedText: result.translatedText,
-        sourceLang: result.sourceLang,
-        targetLang: result.targetLang,
+        translations,
         translateStatus,
       });
 
@@ -224,7 +267,8 @@ export class MessagesService {
       this.eventEmitter.emit('message.translated', {
         messageId,
         chatId,
-        translatedText: result.translatedText,
+        sourceLang,
+        translations,
         translateStatus,
       });
     } catch (error) {
@@ -235,7 +279,8 @@ export class MessagesService {
       this.eventEmitter.emit('message.translated', {
         messageId,
         chatId,
-        translatedText: '',
+        sourceLang,
+        translations: {},
         translateStatus: 'failed',
       });
     }
@@ -266,6 +311,80 @@ export class MessagesService {
       this.throwAiFailure('AI summary', result.providerStatus, result.error);
     }
     return result;
+  }
+
+  /**
+   * Поиск строительных терминов в сообщении (JWT-защищённый маршрут).
+   * Текст, язык и страна берутся из сохранённого сообщения и профиля
+   * отправителя — клиенту эти данные не доверяют. Язык объяснений —
+   * preferred_language запрашивающего пользователя.
+   */
+  async getConstructionTerms(messageId: number, userId: number): Promise<ConstructionTermsResult> {
+    const message = await this.messagesRepository.findOne({ where: { id: messageId } });
+    if (!message) {
+      throw new NotFoundException('Сообщение не найдено');
+    }
+
+    const isParticipant = await this.chatsService.isParticipant(message.chatId, userId);
+    if (!isParticipant) {
+      throw new ForbiddenException('Вы не являетесь участником этого чата');
+    }
+
+    if (message.isDeleted) {
+      throw new BadRequestException('Сообщение удалено');
+    }
+    if (message.voiceFileId) {
+      throw new BadRequestException('Анализ терминов доступен только для текстовых сообщений');
+    }
+
+    const text = (message.originalText || message.content || '').trim();
+    if (!text) {
+      throw new BadRequestException('В сообщении нет текста для анализа');
+    }
+
+    const sender = await this.usersService.findOne(message.userId);
+    const requester = await this.usersService.findOne(userId);
+
+    const sourceLanguage =
+      normalizeLanguage(message.sourceLang) ||
+      normalizeLanguage(sender?.preferred_language) ||
+      'ru';
+    const responseLanguage = normalizeLanguage(requester?.preferred_language) || 'ru';
+    const countryCode = (sender?.country_code || 'RU').toUpperCase();
+
+    // Кэш по message id + языку интерфейса + стране + версии текста,
+    // чтобы ограничить повторные вызовы AI и Wikimedia
+    const cacheKey = `cterms:${messageId}:${responseLanguage}:${countryCode}:${this.hashText(text)}`;
+    const cached = await this.redisService.get<ConstructionTermsResult>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const result = await this.translationService.constructionTerms(
+      text,
+      sourceLanguage,
+      responseLanguage,
+      countryCode,
+    );
+
+    if (result.status === 'failed') {
+      // Сообщение остаётся доступным — ошибка пробрасывается как статус анализа
+      this.throwAiFailure('Construction terms analysis', result.providerStatus, result.error);
+    }
+
+    // Кэшируем на 1 час только успешные результаты (включая пустой список терминов)
+    await this.redisService.set(cacheKey, result, 3600);
+
+    return result;
+  }
+
+  private hashText(text: string): string {
+    let hash = 0;
+    for (let i = 0; i < text.length; i++) {
+      hash = (hash << 5) - hash + text.charCodeAt(i);
+      hash = hash & hash;
+    }
+    return Math.abs(hash).toString(36);
   }
 
   async transcribeAudio(file: Express.Multer.File, language: string = 'ru') {

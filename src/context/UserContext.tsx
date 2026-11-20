@@ -14,6 +14,7 @@ interface UserContextType {
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => void;
   changeLanguage: (lang: 'ru' | 'en') => Promise<void>;
+  changeCountry: (country: string) => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -44,7 +45,7 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
       email: res.user.email,
       name: res.user.username,
       language: res.user.language || 'ru',
-      country: '',
+      country: res.user.country || '',
       status: '',
       privacySettings: { showLastSeen: true, showReadReceipts: true },
     };
@@ -52,7 +53,6 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
     sessionStorage.setItem('user', JSON.stringify(userData));
     router.push('/chat');
   };
-
   const register = async (
     email: string,
     username: string,
@@ -71,7 +71,7 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
       email: res.user.email,
       name: res.user.username,
       language: res.user.language || preferred_language,
-      country: '',
+      country: res.user.country || '',
       status: '',
       privacySettings: { showLastSeen: true, showReadReceipts: true },
     };
@@ -112,6 +112,20 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const changeCountry = async (country: string) => {
+    const normalized = country.toUpperCase();
+    try {
+      await apiClient.updateCountry(normalized);
+    } catch (e) {
+      console.warn('Backend updateCountry skipped:', e);
+    }
+    if (user) {
+      const updated = { ...user, country: normalized };
+      setUser(updated);
+      sessionStorage.setItem('user', JSON.stringify(updated));
+    }
+  };
+
   return (
     <UserContext.Provider
       value={{
@@ -122,6 +136,7 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
         logout,
         updateUser,
         changeLanguage,
+        changeCountry,
       }}
     >
       {children}

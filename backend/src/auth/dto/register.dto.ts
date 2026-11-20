@@ -1,4 +1,5 @@
-import { IsEmail, IsString, MinLength, MaxLength, IsOptional, IsIn } from 'class-validator';
+import { IsEmail, IsString, MinLength, MaxLength, IsOptional, IsIn, Matches } from 'class-validator';
+import { SUPPORTED_LANGUAGES } from '../../common/languages';
 
 export class RegisterDto {
   @IsEmail({}, { message: 'Некорректный формат email' })
@@ -14,8 +15,13 @@ export class RegisterDto {
   password: string;
 
   @IsOptional()
-  @IsIn(['ru', 'en', 'de', 'fr', 'es', 'zh', 'ar'], { 
-    message: 'Язык должен быть одним из: ru, en, de, fr, es, zh, ar' 
+  @IsIn([...SUPPORTED_LANGUAGES], {
+    message: `Язык должен быть одним из: ${SUPPORTED_LANGUAGES.join(', ')}`,
   })
   preferred_language?: string;
+
+  // Двухбуквенный ISO 3166-1 alpha-2 код страны — контекст для строительных терминов
+  @IsOptional()
+  @Matches(/^[A-Za-z]{2}$/, { message: 'Код страны должен быть двухбуквенным ISO-кодом' })
+  country_code?: string;
 }

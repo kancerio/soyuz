@@ -16,9 +16,9 @@ export class UsersService {
   }
 
   // Список пользователей для клиента — без password и refreshToken
-  findAllPublic(): Promise<Pick<User, 'id' | 'username' | 'email' | 'preferred_language' | 'createdAt'>[]> {
+  findAllPublic(): Promise<Pick<User, 'id' | 'username' | 'email' | 'preferred_language' | 'country_code' | 'createdAt'>[]> {
     return this.usersRepository.find({
-      select: ['id', 'username', 'email', 'preferred_language', 'createdAt'],
+      select: ['id', 'username', 'email', 'preferred_language', 'country_code', 'createdAt'],
       order: { id: 'ASC' },
     });
   }

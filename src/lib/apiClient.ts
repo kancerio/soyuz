@@ -1,4 +1,4 @@
-import { Chat, Message, TranslateStatus, TranscriptStatus, SummaryStatus } from '@/types/chat';
+import { Chat, Message, TranslateStatus, TranscriptStatus, SummaryStatus, ConstructionTerm } from '@/types/chat';
 import { User } from '@/types/user';
 import { reauthSocket, setSocketAuthErrorHandler } from './socket';
 
@@ -98,6 +98,8 @@ async function request<T>(
     headers.set('Content-Type', 'application/json');
   }
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+  // Игнорируем антифишинговую заглушку localtunnel при демо через туннель
+  headers.set('bypass-tunnel-reminder', 'true');
 
   const response = await fetch(url, { ...options, headers });
   if (response.status === 401 && retry && refreshToken) {
@@ -156,6 +158,7 @@ export function mapBackendMessage(m: any): Message {
     translatedText: m.translatedText ?? null,
     targetLang: m.targetLang ?? null,
     translateStatus: (m.translateStatus as TranslateStatus) ?? 'pending',
+    translations: m.translations ?? null,
 
     type: isVoice ? 'voice' : (m.type ?? 'text'),
     voiceFileId,
@@ -187,29 +190,36 @@ export const apiClient = {
   getVoiceAudio: async (voiceFileId: string): Promise<Blob> => {
     const headers = new Headers();
     if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+    headers.set('bypass-tunnel-reminder', 'true');
     const response = await fetch(apiClient.voiceFileUrl(voiceFileId), { headers });
     if (!response.ok) throw new Error(`Не удалось загрузить аудио: ${response.status}`);
     return response.blob();
   },
 
-  register: (data: { email: string; username: string; password: string; preferred_language?: string }) =>
+  register: (data: { email: string; username: string; password: string; preferred_language?: string; country_code?: string }) =>
     request<{
       accessToken: string;
       refreshToken: string;
-      user: { id: number; email: string; username: string; language: string };
+      user: { id: number; email: string; username: string; language: string; country?: string };
     }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
 
   updateLanguage: (language: string) =>
-    request<{ id: number; email: string; username: string; language: string }>(
+    request<{ id: number; email: string; username: string; language: string; country?: string }>(
       '/users/language',
       { method: 'PATCH', body: JSON.stringify({ language }) }
+    ),
+
+  updateCountry: (country: string) =>
+    request<{ id: number; email: string; username: string; language: string; country: string }>(
+      '/users/country',
+      { method: 'PATCH', body: JSON.stringify({ country }) }
     ),
 
   login: (data: { email: string; password: string }) =>
     request<{
       accessToken: string;
       refreshToken: string;
-      user: { id: number; email: string; username: string; language: string };
+      user: { id: number; email: string; username: string; language: string; country?: string };
     }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
 
   logout: () => request<{ message: string }>('/auth/logout', { method: 'POST' }),
@@ -332,6 +342,21 @@ export const apiClient = {
     }>(
       `/messages/chat/${chatId}/summary${limit ? `?limit=${limit}` : ''}`
     ),
+
+  /**
+   * Строительные термины сообщения. Текст, язык и страна отправителя
+   * определяются на сервере из сохранённого сообщения и профиля.
+   */
+  getConstructionTerms: (messageId: number) =>
+    request<{
+      terms: ConstructionTerm[];
+      source_language: string;
+      response_language: string;
+      country_code: string;
+      provider: string;
+      mock: boolean;
+      status: 'completed' | 'failed';
+    }>(`/messages/${messageId}/construction-terms`, { method: 'POST' }),
 
   transcribeAudio: async (file: Blob, language: string) => {
     const formData = new FormData();

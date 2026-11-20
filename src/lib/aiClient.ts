@@ -38,6 +38,8 @@ async function requestAI<T>(endpoint: string, options: RequestInit = {}): Promis
   if (options.body && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
+  // Игнорируем антифишинговую заглушку localtunnel при демо через туннель
+  headers.set('bypass-tunnel-reminder', 'true');
 
   const response = await fetch(`${AI_API_BASE}${endpoint}`, { ...options, headers });
   if (!response.ok) {

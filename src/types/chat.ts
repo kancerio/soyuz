@@ -23,6 +23,31 @@ export type UploadStatus =
   | 'error'
   | 'cancelled';
 
+/** Персональный перевод сообщения на язык конкретного получателя */
+export interface MessageTranslation {
+  text: string;
+  status: 'completed' | 'failed';
+}
+
+/** Строительный термин из AI /construction-terms (start/end — UTF-16 смещения JS-строки) */
+export interface ConstructionTerm {
+  term: string;
+  start: number;
+  end: number;
+  definition: string;
+  country_code: string;
+  source_title: string;
+  source_url: string;
+  source_language: string;
+}
+
+export type ConstructionTermsStatus =
+  | 'idle'
+  | 'loading'
+  | 'loaded'
+  | 'empty'
+  | 'error';
+
 export interface VoiceMetadata {
   durationMs: number;
   mimeType: string;
@@ -51,6 +76,8 @@ export interface Message {
   translatedText?: string | null;
   targetLang?: string | null;
   translateStatus?: TranslateStatus;
+  /** Персональные переводы на язык каждого получателя: { en: {text, status}, ... } */
+  translations?: Record<string, MessageTranslation> | null;
 
   // --- Локальный статус отправки (только на фронте) ---
   localStatus?: 'sending' | 'sent' | 'delivered' | 'read' | 'error';
