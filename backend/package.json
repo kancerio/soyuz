@@ -95,7 +95,9 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",
-    "setupFilesAfterEnv": ["<rootDir>/../jest.setup.js"],
+    "setupFilesAfterEnv": [
+      "<rootDir>/../jest.setup.js"
+    ],
     "transformIgnorePatterns": [
       "node_modules/(?!(@nestjs/axios|@nestjs/event-emitter|axios)/)"
     ]
