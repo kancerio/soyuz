@@ -32,7 +32,9 @@ async function bootstrap() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    // bypass-tunnel-reminder ставит фронт в каждый запрос (заглушка localtunnel);
+    // без него в списке preflight OPTIONS не проходит, и браузер блокирует запрос
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'bypass-tunnel-reminder'],
   });
   
   const port = Number(process.env.PORT ?? 3001);
